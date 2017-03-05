@@ -140,6 +140,61 @@ def getEmailContents(labels, d_emails):
 
   print "Completed storing contents of all emails in list!"
 
+def load_emails():
+  emails = {}
+  for file_i in range(1, 2):
+    # Load json; add its data to emails list
+    cur_filename = "enron_database/emails_fixed_%d.json" % (file_i)
+    f = open(cur_filename, 'r')
+    data = json.load(f)
+    emails.update(data)
+  return emails
+
+# 94,273 gender "labelled"
+# 58,490 are actually labelled with Male or Female categories.
+def load_gender_map():
+  # Create a map associating UID to gender
+  gender_map = {}
+  num_nonclassified = 0
+  with open("Columbia_Enron_FirstName_Gender_Type.csv") as file:
+    d_reader = csv.reader(file, delimiter = ",")
+    for row in d_reader:
+      uid = row[0]
+      gender = row[5]
+      if gender == "FALSE":
+        break
+      if gender == "-1":
+        num_nonclassified += 1
+      gender_map[uid] = gender
+  print "The number of non-classified employees is " + str(num_nonclassified)
+  return gender_map
+
+def get_gender_features():
+  # Feature vector includes tuples with (gender of sender, gender of recipient)
+  # 1 represents Male, 0 represents Female, -1 represents unknown
+  emails = load_emails()
+  gender_map = load_gender_map()
+  print len(gender_map.keys())
+  gender_feature_vector = []
+
+  for email_id, email in emails.iteritems():
+    sender = str(email["from"])
+    recipient = str(email["recipients"][0])  # To-do: Handle multiple recipients
+
+    # Skip the e-mail cases where either the sender or recipient is None, or if there is more than one recipient
+    if sender is None or recipient is None:
+      continue
+
+    sender_recipient_tuple = (gender_map.get(sender, -1), gender_map.get(recipient, -1))
+    print sender_recipient_tuple
+    gender_feature_vector.append(sender_recipient_tuple)
+
+  print "length of gender feature vector is " + str(len(gender_feature_vector))
+  # length of gender feature vector is 50,000
+  return gender_feature_vector
+
+get_gender_features()
+
 def process_command_line():
   """Sets command-line flags"""
   parser = argparse.ArgumentParser(description="Write and read formatted Json files")
