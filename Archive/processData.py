@@ -1,9 +1,9 @@
-import bson
-import json
-import argparse
 
 # Loads and processes the Enron Organizational Hierarchy json data
 # CS 224N Winter 2017
+
+import json
+import argparse
 
 def writeJson(old_filename, new_filename, n_per_file):
   """Write proper version of json"""
