@@ -61,9 +61,8 @@ def get_power_labels_and_indices():
 
   return indices_with_power_relations, labels
 
-get_power_labels_and_indices()
 
-def bag_of_words_features():
+def bag_of_words_features(indices_with_power_relations):
   """Returns bag-of-words features for each email"""
   feats = {}
   filename = "enron_database/emails_fixed.json"
@@ -125,8 +124,8 @@ def main():
 
   feat_vecs = []
   if args.is_bow:
-    labels = get_power_labels()
-    feat_vecs = bag_of_words_features()
+    indices_with_power_relations, labels = get_power_labels_and_indices()
+    feat_vecs = bag_of_words_features(indices_with_power_relations)
 
     # TEMP: print the first 5 feature vectors
     i = 0
