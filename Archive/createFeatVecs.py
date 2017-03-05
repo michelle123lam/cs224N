@@ -8,6 +8,7 @@ import string
 import re
 import csv
 from sklearn.feature_extraction.text import CountVectorizer
+import numpy as np
 
 def get_power_labels_and_indices(d_emails):
   """Returns power labels for each email"""
@@ -26,7 +27,9 @@ def get_power_labels_and_indices(d_emails):
   # read in email tuples and check if power relations exist for the email
   # with open('./enron_database/emails_fixed.json') as file:
   #   d_emails = json.load(file)
-  email_contents = []
+  email_contents = [] # text content of each email
+  email_keys = [] # key of each email (email uid, sender uid, recipient uid)
+
   for i in range(0, 276279):
     email = d_emails[str(i)]
 
@@ -43,25 +46,37 @@ def get_power_labels_and_indices(d_emails):
     recipients = email["recipients"]
     if recipients is None:
       continue
+
+    # check valid text content
     if "subject" not in email and "body" not in email:
       continue
-    for j in range(0, len(recipients)):
-      # dominant sender, subordinate recipient = label 0
-      if (int(sender), int(recipients[j])) in dominance_map:
-        labelled_tuples[(email["uid"], int(sender), int(recipients[j]))] = 0
-      elif (int(recipients[j]), int(sender)) in dominance_map:
-        labelled_tuples[(email["uid"], int(recipients[j]), int(sender))] = 1
 
+    for j in range(0, len(recipients)):
+      # cur_key = (email["uid"], int(sender), int(recipients[j]))
+      cur_key = "(" + str(email["uid"]) + ", " + str(sender) + ", " + str(recipients[j]) + ")" # key for json
       content = ""
       if "subject" in email:
         content += email["subject"]
       if "body" in email:
         content += email["body"]
-      email_contents.append(content) # Add email contents to list
+
+      content = content.encode('utf-8').replace('\n', '')
+
+      # dominant sender, subordinate recipient = label 0
+      if (int(sender), int(recipients[j])) in dominance_map:
+        labelled_tuples[cur_key] = 0
+        email_contents.append(content) # Add email contents to list
+        email_keys.append(cur_key)
+      elif (int(recipients[j]), int(sender)) in dominance_map:
+        # labelled_tuples[(email["uid"], int(recipients[j]), int(sender))] = 1
+        labelled_tuples[cur_key] = 1
+        email_contents.append(content) # Add email contents to list
+        email_keys.append(cur_key)
+
 
   print len(labelled_tuples)
 
-  return labelled_tuples, email_contents
+  return labelled_tuples, email_contents, email_keys
 
 
 def bag_of_words_features(labels, d_emails):
@@ -120,23 +135,23 @@ def bag_of_words_features(labels, d_emails):
   print "Completed storing feat_and_labels to json!"
   return feats, feats_and_labels
 
-def getEmailContents(labels, d_emails):
-  email_contents = []
+# def getEmailContents(labels, d_emails):
+#   email_contents = []
 
-  for email_id, email in d_emails.iteritems():
-    # Discard emails without necessary fields
-    if "subject" not in email or "body" not in email or "recipients" not in email or len(email["recipients"]) == 0 or "sender" not in email:
-      continue
+#   for email_id, email in d_emails.iteritems():
+#     # Discard emails without necessary fields
+#     if "subject" not in email or "body" not in email or "recipients" not in email or len(email["recipients"]) == 0 or "sender" not in email:
+#       continue
 
-    recipients = email["recipients"]
-    sender = email["sender"]
-    for recipient in recipients:
-      cur_key = (email["uid"], sender, recipient)
+#     recipients = email["recipients"]
+#     sender = email["sender"]
+#     for recipient in recipients:
+#       cur_key = (email["uid"], sender, recipient)
 
-      # Only consider emails with power relations
-      if cur_key in labels:
-        content = email["subject"] + email["body"]
-        email_contents.append(content) # Add email contents to list
+#       # Only consider emails with power relations
+#       if cur_key in labels:
+#         content = email["subject"] + email["body"]
+#         email_contents.append(content) # Add email contents to list
 
   print "Completed storing contents of all emails in list!"
 
@@ -193,7 +208,7 @@ def get_gender_features():
   # length of gender feature vector is 50,000
   return gender_feature_vector
 
-get_gender_features()
+# get_gender_features()
 
 def process_command_line():
   """Sets command-line flags"""
@@ -207,27 +222,38 @@ def process_command_line():
 def main():
   args = process_command_line()
 
-  feat_vecs = []
   if args.is_bow:
     with open('./enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
-      labels, email_contents = get_power_labels_and_indices(d_emails)
-      # feats_vecs, feats_and_labels = bag_of_words_features(labels, d_emails)
-      # email_bodies = getEmailContents(labels, d_emails)
+      labels, email_contents, email_keys = get_power_labels_and_indices(d_emails)
+      print "Finished getting power labels and indices!"
+
+      # save email_contents, email_keys, and labels to files
+      email_contents = np.array(email_contents)
+      email_keys = np.array(email_keys)
+      np.save('email_contents.npy', email_contents)
+      with open('email_contents.txt','wb') as f:
+        np.savetxt(f, email_contents, delimiter='\n', fmt="%s")
+
+      np.save('email_keys.npy', email_keys)
+      with open('email_keys.txt','wb') as f:
+        np.savetxt(f, email_keys, delimiter='\n', fmt="%s")
+
+      np.save('labels.npy', labels)
+      with open('labels.json','w') as f:
+        json.dump(labels, f)
+      print "Finished saving email_contents, email_keys, and labels to files!"
+
+      # transform email_contents to sparse vectors of word counts
       count_vect = CountVectorizer()
       train_counts = count_vect.fit_transform(email_contents)
       print "train_counts shape:", train_counts.shape
-      print "train_counts:", train_counts[:10]
+      np.save('train_counts.npy', train_counts)
+      # np.savetxt('train_counts.txt', train_counts)
+      print "train_counts counts:", train_counts[:5]
 
-    print "Completed labels and feat_vecs!"
+    print "Completed labels and feature vectors!"
 
-    # TEMP: print the first 5 feature vectors
-    # i = 0
-    # for key in feat_vecs:
-    #   if i > 5:
-    #     break
-    #   print key, feat_vecs[key]
-    #   i += 1
 
 
 if __name__ == "__main__":
