@@ -14,7 +14,29 @@ def get_power_labels():
 def bag_of_words_features():
   """Returns bag-of-words features for each email"""
   feats = []
-  # TODO: Michelle
+
+  emails = {}
+  for file_i in range(1, 2):
+    # Load json; add its data to emails list
+    cur_filename = "enron_database/emails_fixed_%d.json" % (file_i)
+    f = open(cur_filename, 'r')
+    data = json.load(f)
+    emails.update(data)
+
+  # TODO: ignore indices that don't have power label
+
+  for email_id, email in emails.iteritems():
+    words = []
+    subject = email["subject"]
+    body = email["body"]
+    print "email_id", email_id
+    subject = subject.replace('\n', '')
+    body = body.replace('\n', '')
+    # TODO: more processing of the string? punctuation?
+    words.append(subject.split())
+    words.append(body.split())
+    feats.append(words) # add email's bag-of-words to feature vector
+
   return feats
 
 def process_command_line():
@@ -31,8 +53,9 @@ def main():
 
   feat_vecs = []
   if args.is_bow:
-    feat_vecs = bag_of_words_features()
     labels = get_power_labels()
+    feat_vecs = bag_of_words_features()
+    print "feat_vecs:", feat_vecs[:5]
 
 
 if __name__ == "__main__":

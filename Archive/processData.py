@@ -5,7 +5,7 @@
 import json
 import argparse
 
-def writeJson(old_filename, new_filename, n_per_file):
+def writeSplitJson(old_filename, new_filename, n_per_file):
   """Write proper version of json"""
   with open(old_filename, 'r') as f:
     i = 0
@@ -40,6 +40,27 @@ def writeJson(old_filename, new_filename, n_per_file):
   print "Successfully wrote to %s!" % (new_filename)
 
 
+def writeJson(old_filename, new_filename):
+  """Write proper version of json"""
+  with open(old_filename, 'r') as f:
+    with open(new_filename, 'w') as g:
+      print >> g, "{" # Opening bracket
+      i = 0
+      for x in f:
+        x = x.rstrip()
+        if not x: continue
+        # Add entry with index as key; line item as value
+        new_x = "\"%d\" : %s" % (i, x)
+        # Place comma between subsequent entries
+        if i > 0:
+          new_x = "," + new_x
+        print >> g, new_x
+        i += 1
+      print >> g , "}" # Closing bracket
+
+  print "Successfully wrote to %s!" % (new_filename)
+
+
 def readJson(filename):
   with open(filename) as data_file:
     data = json.load(data_file)
@@ -61,9 +82,9 @@ def main():
 
   if args.write_json:
     n_per_file = 50000 # Number of items per json file
-    writeJson('enron_database/emails.json', 'enron_database/emails_fixed', n_per_file)
-    writeJson('enron_database/entities.json', 'enron_database/entities_fixed', n_per_file)
-    writeJson('enron_database/threads.json', 'enron_database/threads_fixed', n_per_file)
+    writeJson('enron_database/emails.json', 'enron_database/emails_fixed.json')
+    writeJson('enron_database/entities.json', 'enron_database/entities_fixed.json')
+    writeJson('enron_database/threads.json', 'enron_database/threads_fixed.json')
   if args.read_json:
     readJson('enron_database/emails_fixed.json')
     readJson('enron_database/entities_fixed.json')
