@@ -10,8 +10,7 @@ import csv
 
 def get_power_labels_and_indices():
   """Returns power labels for each email"""
-  indices_with_power_relations = []
-  labels = []
+  labelled_tuples = {}
 
   dominance_map = {}
   # read in dominance tuples file in the form (boss, subordinate): immediate?
@@ -42,24 +41,16 @@ def get_power_labels_and_indices():
       recipients = email["recipients"]
       if recipients is None:
         continue
-      if len(recipients) != 1:
-        continue
+      for j in range(0, len(recipients)):
+        # dominant sender, subordinate recipient = label 0
+        if (int(sender), int(recipients[j])) in dominance_map:
+          labelled_tuples[(email["uid"], int(sender), int(recipients[j]))] = 0
+        elif (int(recipients[j]), int(sender)) in dominance_map:
+          labelled_tuples[(email["uid"], int(recipients[j]), int(sender))] = 1
 
-      # dominant sender, subordinate recipient = label 0
-      if (int(sender), int(recipients[0])) in dominance_map:
-        indices_with_power_relations.append(i)
-        labels.append(0)
-      elif (int(recipients[0]), int(sender)):
-        indices_with_power_relations.append(i)
-        labels.append(1)
+  print len(labelled_tuples)
 
-  print len(indices_with_power_relations)
-  print len(labels)
-
-  print indices_with_power_relations[0]
-  print labels[0]
-
-  return indices_with_power_relations, labels
+  return labelled_tuples
 
 
 def bag_of_words_features(indices_with_power_relations):
