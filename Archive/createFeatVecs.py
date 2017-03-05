@@ -4,12 +4,28 @@
 
 import json
 import argparse
+import csv
 
-def get_power_labels():
+def get_power_labels_and_indices():
   """Returns power labels for each email"""
+  indices_with_power_relations = []
   labels = []
-  # TODO: Cat
-  return labels
+
+  dominance_map = {}
+  # read in dominance tuples file in the form (boss, subordinate): immediate?
+  with open('Columbia_Enron_DominanceTuples.csv') as file:
+    d_reader = csv.reader(file, delimiter=",")
+    rows_read = 0
+    for row in d_reader:
+      if rows_read != 0:
+        dominance_map[(int(row[0]), int(row[1]))] = int(row[2])
+      rows_read += 1
+
+  # read in email tuples and check if power relations exist for the email
+  with open('emails_fixed.json'):
+  return indices_with_power_relations, labels
+
+get_power_labels_and_indices()
 
 def bag_of_words_features():
   """Returns bag-of-words features for each email"""
