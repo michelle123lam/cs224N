@@ -6,6 +6,7 @@ import json
 import argparse
 import string
 import re
+import math
 import csv
 from sklearn.feature_extraction.text import CountVectorizer
 from random import shuffle
@@ -13,7 +14,7 @@ import numpy as np
 
 def get_power_labels_and_indices(d_emails):
   """Returns power labels for each email"""
-  labelled_tuples = {}
+  labels = []
 
   dominance_map = {}
   # read in dominance tuples file in the form (boss, subordinate): immediate?
@@ -26,10 +27,9 @@ def get_power_labels_and_indices(d_emails):
       rows_read += 1
 
   # read in email tuples and check if power relations exist for the email
-  # with open('./enron_database/emails_fixed.json') as file:
-  #   d_emails = json.load(file)
+  with open('./enron_database/emails_fixed.json') as file:
+    d_emails = json.load(file)
   email_contents = [] # text content of each email
-  email_keys = [] # key of each email (email uid, sender uid, recipient uid)
 
   for i in range(0, 276279):
     email = d_emails[str(i)]
@@ -53,7 +53,6 @@ def get_power_labels_and_indices(d_emails):
       continue
 
     for j in range(0, len(recipients)):
-      # cur_key = (email["uid"], int(sender), int(recipients[j]))
       cur_key = "(" + str(email["uid"]) + ", " + str(sender) + ", " + str(recipients[j]) + ")" # key for json
       content = ""
       if "subject" in email:
@@ -65,19 +64,15 @@ def get_power_labels_and_indices(d_emails):
 
       # dominant sender, subordinate recipient = label 0
       if (int(sender), int(recipients[j])) in dominance_map:
-        labelled_tuples[cur_key] = 0
         email_contents.append(content) # Add email contents to list
-        email_keys.append(cur_key)
+        labels.append(0)
       elif (int(recipients[j]), int(sender)) in dominance_map:
-        # labelled_tuples[(email["uid"], int(recipients[j]), int(sender))] = 1
-        labelled_tuples[cur_key] = 1
         email_contents.append(content) # Add email contents to list
-        email_keys.append(cur_key)
+        labels.append(1)
 
+  print len(labels)
 
-  print len(labelled_tuples)
-
-  return labelled_tuples, email_contents, email_keys
+  return labels, email_contents
 
 
 def bag_of_words_features(labels, d_emails):
@@ -214,12 +209,31 @@ def get_gender_features():
 train = 0.7
 dev = 0.15
 test = 0.15
+
 def generate_split_dataset(input, labels):
-  indices = range(train_counts.shape[0])
-  shuffle(indices)
+  print np.asarray(input).shape
+  print np.asarray(labels).shape
+  labelled_inputs = np.concatenate((np.asarray(input), np.asarray(labels)), axis=1)
+  train, dev, test = np.split(labelled_inputs.sample(frac=1), [int(.7*len(labelled_inputs)), int(.85*len(labelled_inputs))])
 
-  #get shuffled inputs and labels
+  #save inputs and outputs
+  np.save('train_counts.npy', train[:, [0, train.shape[1] - 1]])
+  np.savetxt('train_counts.txt', train[:, [0, train.shape[1] - 1]])
 
+  np.save('train_counts.npy', train[:, train.shape[1] - 1])
+  np.savetxt('train_counts.txt', train[:, train.shape[1] -1])
+
+  np.save('dev_counts.npy', dev[:, [0, dev.shape[1] - 1]])
+  np.savetxt('dev_counts.txt', dev[:, [0, dev.shape[1] - 1]])
+
+  np.save('dev_counts.npy', dev[:, dev.shape[1] - 1])
+  np.savetxt('dev_counts.txt', dev[:, dev.shape[1] - 1])
+
+  np.save('test_counts.npy', test[:, [0, test.shape[1] - 1]])
+  np.savetxt('test_counts.txt', test[:, [0, test.shape[1] - 1]])
+
+  np.save('test_counts.npy', test[:, test.shape[1] - 1])
+  np.savetxt('test_counts.txt', test[:, test.shape[1] - 1])
 
 def process_command_line():
   """Sets command-line flags"""
@@ -233,36 +247,30 @@ def main():
   args = process_command_line()
 
   if args.is_bow:
-    with open('./enron_database/emails_fixed.json') as file:
+    with open('./enron_database/emails_fixed_1.json') as file:
       d_emails = json.load(file)
-      labels, email_contents, email_keys = get_power_labels_and_indices(d_emails)
+      labels, email_contents  = get_power_labels_and_indices(d_emails)
       print "Finished getting power labels and indices!"
 
-      # save email_contents, email_keys, and labels to files
+      # save email_contents and labels to files
       email_contents = np.array(email_contents)
-      email_keys = np.array(email_keys)
       np.save('email_contents.npy', email_contents)
       with open('email_contents.txt','wb') as f:
         np.savetxt(f, email_contents, delimiter='\n', fmt="%s")
 
-      np.save('email_keys.npy', email_keys)
-      with open('email_keys.txt','wb') as f:
-        np.savetxt(f, email_keys, delimiter='\n', fmt="%s")
-
       np.save('labels.npy', labels)
-      with open('labels.json','w') as f:
-        json.dump(labels, f)
-      print "Finished saving email_contents, email_keys, and labels to files!"
+      np.savetxt('labels.txt', labels)
+
+      print "Finished saving email_contents and labels to files!"
 
       # transform email_contents to sparse vectors of word counts
       count_vect = CountVectorizer()
-      train_counts = count_vect.fit_transform(email_contents)
-      print "all input vectors shape:", train_counts.shape
-      np.save('all_input_counts.npy', train_counts)
-      np.savetxt('all_input_counts.txt', train_counts)
-      print "all_input_counts counts:", train_counts[:5]
+      all_input_counts = count_vect.fit_transform(email_contents)
+      print "all input vectors shape:", all_input_counts.shape
+      print "all_input_counts counts:", all_input_counts[:5]
+      np.save('all_input_counts.npy', all_input_counts)
 
-      generate_split_dataset(train_counts, labels)
+      generate_split_dataset(all_input_counts, labels)
 
     print "Completed labels and feature vectors!"
 
