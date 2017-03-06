@@ -8,6 +8,7 @@ import string
 import re
 import csv
 from sklearn.feature_extraction.text import CountVectorizer
+from random import shuffle
 import numpy as np
 
 def get_power_labels_and_indices(d_emails):
@@ -210,6 +211,16 @@ def get_gender_features():
 
 # get_gender_features()
 
+train = 0.7
+dev = 0.15
+test = 0.15
+def generate_split_dataset(input, labels):
+  indices = range(train_counts.shape[0])
+  shuffle(indices)
+
+  #get shuffled inputs and labels
+
+
 def process_command_line():
   """Sets command-line flags"""
   parser = argparse.ArgumentParser(description="Write and read formatted Json files")
@@ -217,7 +228,6 @@ def process_command_line():
   parser.add_argument('--bow', dest='is_bow', type=bool, default=False, help='Chooses to generate bag-of-words features')
   args = parser.parse_args()
   return args
-
 
 def main():
   args = process_command_line()
@@ -247,10 +257,12 @@ def main():
       # transform email_contents to sparse vectors of word counts
       count_vect = CountVectorizer()
       train_counts = count_vect.fit_transform(email_contents)
-      print "train_counts shape:", train_counts.shape
-      np.save('train_counts.npy', train_counts)
-      # np.savetxt('train_counts.txt', train_counts)
-      print "train_counts counts:", train_counts[:5]
+      print "all input vectors shape:", train_counts.shape
+      np.save('all_input_counts.npy', train_counts)
+      np.savetxt('all_input_counts.txt', train_counts)
+      print "all_input_counts counts:", train_counts[:5]
+
+      generate_split_dataset(train_counts, labels)
 
     print "Completed labels and feature vectors!"
 
