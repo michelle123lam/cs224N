@@ -211,9 +211,7 @@ dev = 0.15
 test = 0.15
 
 def generate_split_dataset(input, labels):
-  print np.asarray(input).shape
-  print np.asarray(labels).shape
-  labelled_inputs = np.concatenate((np.asarray(input), np.asarray(labels)), axis=1)
+  labelled_inputs = np.concatenate((input.todense(), np.asarray(labels).reshape((len(labels), 1))), axis=1)
   train, dev, test = np.split(labelled_inputs.sample(frac=1), [int(.7*len(labelled_inputs)), int(.85*len(labelled_inputs))])
 
   #save inputs and outputs
@@ -221,7 +219,7 @@ def generate_split_dataset(input, labels):
   np.savetxt('train_counts.txt', train[:, [0, train.shape[1] - 1]])
 
   np.save('train_counts.npy', train[:, train.shape[1] - 1])
-  np.savetxt('train_counts.txt', train[:, train.shape[1] -1])
+  np.savetxt('train_counts.txt', train[:, train.shape[1] - 1])
 
   np.save('dev_counts.npy', dev[:, [0, dev.shape[1] - 1]])
   np.savetxt('dev_counts.txt', dev[:, [0, dev.shape[1] - 1]])
