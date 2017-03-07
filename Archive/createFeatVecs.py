@@ -216,13 +216,13 @@ def generate_two_split_dataset(input, labels):
   #save inputs and outputs
   np.save('train_input_counts.npy', x_train)
 
-  np.save('train_output_counts.npy', x_test)
+  np.save('train_labels.npy', x_test)
 
   np.save('test_input_counts.npy', y_train)
   np.savetxt('test_input_counts.txt', y_train)
 
-  np.save('test_output_counts.npy', y_test)
-  np.savetxt('test_output_counts.txt', y_test)
+  np.save('test_labels.npy', y_test)
+  np.savetxt('test_labels.txt', y_test)
 
   print("Completed split into train and test datasets!")
 
