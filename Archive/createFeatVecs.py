@@ -9,6 +9,7 @@ import re
 import math
 import csv
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
 from random import shuffle
 import numpy as np
 
@@ -206,32 +207,28 @@ def get_gender_features():
 
 # get_gender_features()
 
-train = 0.7
-dev = 0.15
-test = 0.15
-
-def generate_split_dataset(input, labels):
-  labelled_inputs = np.concatenate((input.todense(), np.asarray(labels).reshape((len(labels), 1))), axis=1)
-  train, dev, test = np.split(labelled_inputs.sample(frac=1), [int(.7*len(labelled_inputs)), int(.85*len(labelled_inputs))])
+# generate train and test sets
+def generate_two_split_dataset(input, labels):
+  train = 0.7
+  dev = 0.3
+  x_train, x_test, y_train, y_test = train_test_split(input, labels, test_size=0.3, random_state=42)
 
   #save inputs and outputs
-  np.save('train_counts.npy', train[:, [0, train.shape[1] - 1]])
-  np.savetxt('train_counts.txt', train[:, [0, train.shape[1] - 1]])
+  np.save('train_input_counts.npy', x_train)
 
-  np.save('train_counts.npy', train[:, train.shape[1] - 1])
-  np.savetxt('train_counts.txt', train[:, train.shape[1] - 1])
+  np.save('train_output_counts.npy', x_test)
 
-  np.save('dev_counts.npy', dev[:, [0, dev.shape[1] - 1]])
-  np.savetxt('dev_counts.txt', dev[:, [0, dev.shape[1] - 1]])
+  np.save('test_input_counts.npy', y_train)
+  np.savetxt('test_input_counts.txt', y_train)
 
-  np.save('dev_counts.npy', dev[:, dev.shape[1] - 1])
-  np.savetxt('dev_counts.txt', dev[:, dev.shape[1] - 1])
+  np.save('test_output_counts.npy', y_test)
+  np.savetxt('test_output_counts.txt', y_test)
 
-  np.save('test_counts.npy', test[:, [0, test.shape[1] - 1]])
-  np.savetxt('test_counts.txt', test[:, [0, test.shape[1] - 1]])
+  print("Completed split into train and test datasets!")
 
-  np.save('test_counts.npy', test[:, test.shape[1] - 1])
-  np.savetxt('test_counts.txt', test[:, test.shape[1] - 1])
+# geneate train, dev, and test sets
+def generate_three_split_dataset(input, labels):
+  pass
 
 def process_command_line():
   """Sets command-line flags"""
@@ -245,7 +242,7 @@ def main():
   args = process_command_line()
 
   if args.is_bow:
-    with open('./enron_database/emails_fixed_1.json') as file:
+    with open('./enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
       labels, email_contents  = get_power_labels_and_indices(d_emails)
       print "Finished getting power labels and indices!"
@@ -268,7 +265,7 @@ def main():
       print "all_input_counts counts:", all_input_counts[:5]
       np.save('all_input_counts.npy', all_input_counts)
 
-      generate_split_dataset(all_input_counts, labels)
+      generate_two_split_dataset(all_input_counts, labels)
 
     print "Completed labels and feature vectors!"
 
