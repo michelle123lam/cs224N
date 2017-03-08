@@ -1,4 +1,3 @@
-
 # Creates feature vectors from Enron Organizational Hierarchy json data
 # CS 224N Winter 2017
 
