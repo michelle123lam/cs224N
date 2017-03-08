@@ -74,7 +74,6 @@ def get_power_labels_and_indices(d_emails):
         email_contents.append(content) # Add email contents to list
         email_keys.append(cur_key)
 
-
   print len(labelled_tuples)
 
   return labelled_tuples, email_contents, email_keys
@@ -263,10 +262,9 @@ def main():
       print "all_input_counts counts:", train_counts[:5]
 
       generate_split_dataset(train_counts, labels)
+      print labels
 
     print "Completed labels and feature vectors!"
-
-
 
 if __name__ == "__main__":
     main()
