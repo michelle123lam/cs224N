@@ -218,7 +218,6 @@ def generate_two_split_dataset(input, labels):
   np.save('train_labels.npy', y_train)
 
   np.save('test_input_counts.npy', x_test)
-  np.savetxt('test_input_counts.txt', x_test)
 
   np.save('test_labels.npy', y_test)
   np.savetxt('test_labels.txt', y_test)
