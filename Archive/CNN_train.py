@@ -38,6 +38,8 @@ print("")
 
 # Load data
 x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
+# dominant sender, subordinate recipient = label 0
+print y[0]
 
 # Build vocabulary
 max_email_length = max([len(x.split(" ")) for x in x_text])
@@ -95,7 +97,9 @@ with tf.Graph().as_default():
 
     # Summaries for loss and accuracy
     loss_summary = tf.summary.scalar("loss", cnn.loss)
+    print loss_summary
     acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
+    print acc_summary
 
     # Train Summaries
     train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
