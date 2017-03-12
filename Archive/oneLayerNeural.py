@@ -22,13 +22,13 @@ def init_weights(shape):
     weights = tf.random_normal(shape, stddev=0.1)
     return tf.Variable(weights)
 
-def forwardprop(X, w_1, w_2):
+def forwardprop(X, w_1, w_2, b_1, b_2):
     """
     Forward-propagation.
     IMPORTANT: yhat is not softmax since TensorFlow's softmax_cross_entropy_with_logits() does that internally.
     """
-    h = tf.nn.sigmoid(tf.matmul(X, w_1))
-    yhat = tf.matmul(h, w_2)
+    h = tf.nn.sigmoid(tf.matmul(X, w_1) + b_1)
+    yhat = tf.matmul(h, w_2) + b_2
     return yhat
 
 def get_data():
@@ -68,7 +68,8 @@ def main():
 
     # Layer's sizes
     x_size = train_X.shape[1]
-    h_size = 100
+    h_size = 50
+
     y_size = train_y.shape[1]
 
     # Symbols
@@ -79,8 +80,11 @@ def main():
     w_1 = init_weights((x_size, h_size))
     w_2 = init_weights((h_size, y_size))
 
+    b_1 = tf.Variable(tf.zeros([h_size]))
+    b_2 = tf.Variable(tf.zeros([y_size]))
+
     # Forward propagation
-    yhat = forwardprop(X, w_1, w_2)
+    yhat = forwardprop(X, w_1, w_2, b_1, b_2)
     predict = tf.argmax(yhat, axis=1)
 
     # Backward propagation
@@ -94,7 +98,7 @@ def main():
 
     train_accuracies = []
     test_accuracies = []
-    num_epochs = 2
+    num_epochs = 10
     for epoch in range(num_epochs):
         # Train with each example
         for i in range(len(train_X)):
