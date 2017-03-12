@@ -8,12 +8,16 @@ import datetime
 from text_cnn import TextCNN
 from tensorflow.contrib import learn
 from sklearn.model_selection import train_test_split
-from processData import batch_iter, load_data_and_labels
+from processData import batch_iter, load_data_and_labels, load_embedding_vectors_word2vec, load_embedding_vectors_glove
+from utils.treebank import StanfordSentiment
+import utils.glove as glove
+import yaml
 
 # Parameters
 # ==================================================
 # Model Hyperparameters
-tf.flags.DEFINE_integer("embedding_dim", 128, "Dimensionality of character embedding (default: 128)")
+tf.flags.DEFINE_boolean("enable_word_embeddings", True, "Enable/disable the word embedding (default: True)")
+tf.flags.DEFINE_integer("embedding_dim", 100, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
@@ -21,7 +25,7 @@ tf.flags.DEFINE_integer("l2_reg_lambda", 0, "L2 regularization lambda (default: 
 
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
+tf.flags.DEFINE_integer("num_epochs", 100, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
@@ -36,16 +40,25 @@ for attr, value in sorted(FLAGS.__flags.items()):
     print("{}={}".format(attr.upper(), value))
 print("")
 
+with open("config.yml", 'r') as ymlfile:
+    cfg = yaml.load(ymlfile)
+
+if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
+    embedding_name = cfg['word_embeddings']['default']
+    embedding_dimension = cfg['word_embeddings'][embedding_name]['dimension']
+else:
+    embedding_dimension = FLAGS.embedding_dim
+
 # Load data
 x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
-# dominant sender, subordinate recipient = label 0
-print y[0]
 
 # Build vocabulary
 max_email_length = max([len(x.split(" ")) for x in x_text])
 # Function that maps each email to sequences of word ids. Shorter emails will be padded.
 vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
 # x is a matrix where each row contains a vector of integers corresponding to a word. 
+
+# Word indices as one-hot vectors.
 x = np.array(list(vocab_processor.fit_transform(x_text)))
 
 # Randomly shuffle data
@@ -97,9 +110,7 @@ with tf.Graph().as_default():
 
     # Summaries for loss and accuracy
     loss_summary = tf.summary.scalar("loss", cnn.loss)
-    print loss_summary
     acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
-    print acc_summary
 
     # Train Summaries
     train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
@@ -123,6 +134,27 @@ with tf.Graph().as_default():
 
     # Initialize all variables
     sess.run(tf.global_variables_initializer())
+    if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
+        vocabulary = vocab_processor.vocabulary_
+        initW = None
+        if embedding_name == 'word2vec':
+            # load embedding vectors from the word2vec
+            print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
+            initW = load_embedding_vectors_word2vec(vocabulary,
+                                                                 cfg['word_embeddings']['word2vec']['path'],
+                                                                 cfg['word_embeddings']['word2vec']['binary'])
+            print("word2vec file has been loaded")
+        elif embedding_name == 'glove':
+            # load embedding vectors from the glove
+            print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
+            initW = load_embedding_vectors_glove(vocabulary,
+                                                              cfg['word_embeddings']['glove']['path'],
+                                                              embedding_dimension)
+            print("glove file has been loaded\n")
+            print "size of embedding matrix is: "
+            # error is: Resource exhausted: OOM when allocating tensor with shape [20319,14080,100]
+            print initW.shape
+        sess.run(cnn.W.assign(initW))
 
     def train_step(x_batch, y_batch):
         """
