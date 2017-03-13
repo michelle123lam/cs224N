@@ -137,6 +137,24 @@ sess.run(init_op)
 # ==================================================
 # RUN LSTM EPOCHS
 
+validation_metrics = {
+  "accuracy":
+    tf.contrib.learn.metric_spec.MetricSpec(
+      metric_fn=tf.contrib.metrics.streaming_accuracy,
+      prediction_key=tf.contrib.learn.prediction_key.PredictionKey.
+      CLASSES),
+  "precision":
+    tf.contrib.learn.metric_spec.MetricSpec(
+      metric_fn=tf.contrib.metrics.streaming_precision,
+      prediction_key=tf.contrib.learn.prediction_key.PredictionKey.
+      CLASSES),
+  "recall":
+    tf.contrib.learn.metric_spec.MetricSpec(
+      metric_fn=tf.contrib.metrics.streaming_recall,
+      prediction_key=tf.contrib.learn.prediction_key.PredictionKey.
+      CLASSES)
+}
+
 no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE)
 n_epochs = 10
 
