@@ -78,26 +78,14 @@ def process_command_line():
   args = parser.parse_args()
   return args
 
-def clean_str(string):
+def clean_str(email):
     """
-    Tokenization/string cleaning for all datasets except for SST.
-    Original taken from https://github.com/yoonkim/CNN_sentence/blob/master/process_data.py
+    Return a string of the e-mail words.
     """
-    string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
-    string = re.sub(r"\'s", " \'s", string)
-    string = re.sub(r"\'ve", " \'ve", string)
-    string = re.sub(r"n\'t", " n\'t", string)
-    string = re.sub(r"\'re", " \'re", string)
-    string = re.sub(r"\'d", " \'d", string)
-    string = re.sub(r"\'ll", " \'ll", string)
-    string = re.sub(r",", " , ", string)
-    string = re.sub(r"!", " ! ", string)
-    string = re.sub(r"\(", " \( ", string)
-    string = re.sub(r"\)", " \) ", string)
-    string = re.sub(r"\?", " \? ", string)
-    string = re.sub(r"\s{2,}", " ", string)
-    return string.strip().lower()
-
+    splitted = email.strip().split()[1:]
+    # Deal with some peculiar encoding issues with this file
+    sentences += [w.lower() for w in splitted]
+    return sentences
 
 def load_data_and_labels(email_contents_file, labels_file):
     """
@@ -105,21 +93,18 @@ def load_data_and_labels(email_contents_file, labels_file):
     Returns split sentences and labels.
     """
     # Load data from files
-    x_text = np.load(email_contents_file)
-    x_text = [clean_str(email.strip()) for email in x_text]  # Split by words and clean with regex
+    sentences = []
+    email_contents = np.load(email_contents_file)
+    for email in email_contents:
+      splitted = email.strip().split()[1:]
+      sentences += [[w.lower() for w in splitted]]
+
+    # Number of emails is: 67,730
     labels = np.array(np.load(labels_file))
-    superior_sender = [a for a in labels if a == 0]
-    superior_recipient = [a for a in labels if a == 1]
+    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
+    labels = np.array(labels)
 
-    superior_sender_labels = [[1, 0] for _ in superior_sender]
-    superior_recipient_labels = [[0, 1] for _ in superior_recipient]
-    labels = np.concatenate([superior_sender_labels, superior_recipient_labels], 0)
-
-    # Finish loading the datasets as arrays, then test it with print statement
-
-    # x_text contains an array of strings for all examples
-    # y contains an array of labels for all examples
-    return [x_text, labels]
+    return [sentences, labels]
 
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
   """
