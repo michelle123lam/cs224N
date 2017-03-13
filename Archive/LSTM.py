@@ -26,74 +26,107 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename, 
   plt.legend(['train', 'test'], loc='upper left')
   plt.savefig(filename)
 
-# ==================================================
-# PARAMETERS
-# Model Hyperparameters
-# tf.flags.DEFINE_boolean("enable_word_embeddings", True, "Enable/disable the word embedding (default: True)")
 
-# FLAGS = tf.flags.FLAGS
-# FLAGS._parse_flags()
-# print("\nParameters:")
-# for attr, value in sorted(FLAGS.__flags.items()):
-#     print("{}={}".format(attr.upper(), value))
-# print("")
+def getSentenceFeatures(tokens, wordVectors, sentence):
+    """
+    Obtain the sentence feature for sentiment analysis by averaging its
+    word vectors
+    """
 
-# # Setup for word embeddings
-# with open("config.yml", 'r') as ymlfile:
-#     cfg = yaml.load(ymlfile)
+    # Implement computation for the sentence features given a sentence.
 
-# if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-#     embedding_name = cfg['word_embeddings']['default']
-#     embedding_dimension = cfg['word_embeddings'][embedding_name]['dimension']
-# else:
-#     embedding_dimension = FLAGS.embedding_dim
+    # Inputs:
+    # tokens -- a dictionary that maps words to their indices in
+    #           the word vector list
+    # wordVectors -- word vectors (each row) for all tokens
+    # sentence -- a list of words in the sentence of interest
+
+    # Output:
+    # - sentVector: feature vector for the sentence
+    sentVector = np.zeros((wordVectors.shape[1],))
+
+    indices = []
+    for word in sentence:
+        if tokens.get(word, 0) == 0:
+            print "this word %s does not appear in the glove vector initialization" % word
+        else:
+            indices.append(tokens[word])
+
+    sentVector = np.mean(wordVectors[indices, :], axis=0)
+    print sentVector.shape
+
+    assert sentVector.shape == (wordVectors.shape[1],)
+    return sentVector
 
 
 # ==================================================
 # LOAD DATA
 
-x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
-# x_text, y = load_data_and_labels("email_contents_grouped.npy", "labels_grouped.npy")
-print y[0]
-print "y", y.shape
+emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
+# emails, labels = load_data_and_labels("email_contents_grouped.npy", "labels_grouped.npy")
+emails = np.array(emails)
+print "emails shape:", emails.shape
 
-# Build vocabulary
-max_email_length = max([len(x.split(" ")) for x in x_text])
-# Function that maps each email to sequences of word ids. Shorter emails will be padded.
-vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
-# x is a matrix where each row contains a vector of integers corresponding to a word.
-x = np.array(list(vocab_processor.fit_transform(x_text)))
-print "x", x.shape
+max_email_length = max([len(email) for email in emails])
+print "The max_email_length is %d" % max_email_length
+
+dataset = StanfordSentiment()
+tokens = dataset.tokens()
+nWords = len(tokens)
+
+# Initialize word vectors with glove.
+wordVectors = glove.loadWordVectors(tokens)
+print "The shape of embedding matrix is:"
+print wordVectors.shape  # Should be number of e-mails, number of embeddings
 
 # Randomly shuffle data
 np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(y)))  # Array of random numbers from 1 to # of labels.
-x_shuffled = x[shuffle_indices]
-y_shuffled = y[shuffle_indices]
+shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
+emails_shuffled = emails[shuffle_indices]
+labels_shuffled = labels[shuffle_indices]
 
 train = 0.7
 dev = 0.3
-x_train, x_dev, y_train, y_dev = train_test_split(x, y, test_size=0.3, random_state=42)
-x_train = np.expand_dims(x_train, axis=1)
-x_dev = np.expand_dims(x_dev, axis=1)
+x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
 print "x_train", x_train.shape
-print "x_dev", x_dev.shape
+print "x_test", x_test.shape
 print "y_train", y_train.shape
-print "y_dev", y_dev.shape
+print "y_test", y_test.shape
+
+zeros = np.zeros((wordVectors.shape[1],))
+# Load train set and initialize with glove vectors.
+nTrain = len(x_train)
+trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))  # dimVectors should be embedding_dim
+trainLabels = y_train
+for i in xrange(nTrain):
+    words = x_train[i]
+    trainFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
+
+# Prepare test set features
+nTest = len(x_test)
+testFeatures = np.zeros((nTest, FLAGS.embedding_dim))
+testLabels = y_test
+for i in xrange(nTest):
+    words = x_test[i]
+    testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
 
 
 # ==================================================
 # LSTM
 
-NUM_EXAMPLES = 47411
+NUM_EXAMPLES = x_train.shape[0] # 47411
 RNN_HIDDEN = 60
 LEARNING_RATE = 0.01
 
 BATCH_SIZE = 1000
 N_TIMESTEPS = 1
 N_CLASSES = 2
-N_INPUT = 14080
+N_INPUT = x_train.shape[1] # 14080
 keep_rate = 0.5
+
+# Account for 1 timestep
+# x_train = np.expand_dims(x_train, axis=1)
+# x_test = np.expand_dims(x_test, axis=1)
 
 data = tf.placeholder(tf.float32, [None, N_TIMESTEPS, N_INPUT]) # (batch_size, n_timesteps, n_features)
 target = tf.placeholder(tf.float32, [None, N_CLASSES])
@@ -130,28 +163,6 @@ init_op = tf.global_variables_initializer()
 sess = tf.Session()
 sess.run(init_op)
 
-# # Load word embeddings
-# if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-#   vocabulary = vocab_processor.vocabulary_
-#   initW = None
-#   if embedding_name == 'word2vec':
-#     # load embedding vectors from the word2vec
-#     print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
-#     initW = load_embedding_vectors_word2vec(vocabulary,
-#                                            cfg['word_embeddings']['word2vec']['path'],
-#                                            cfg['word_embeddings']['word2vec']['binary'])
-#     print("word2vec file has been loaded")
-#   elif embedding_name == 'glove':
-#     # load embedding vectors from the glove
-#     print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
-#     initW = load_embedding_vectors_glove(vocabulary,
-#                                         cfg['word_embeddings']['glove']['path'],
-#                                         embedding_dimension)
-#     print("glove file has been loaded\n")
-#     print "size of embedding matrix is: "
-#     print initW.shape
-#   sess.run(cnn.W.assign(initW))
-
 
 # ==================================================
 # RUN LSTM EPOCHS
@@ -167,7 +178,7 @@ test_losses = []
 for i in range(n_epochs):
     ptr = 0
     for j in range(no_of_batches):
-        inp, out = x_train[ptr:ptr+BATCH_SIZE], y_train[ptr:ptr+BATCH_SIZE]
+        inp, out = trainFeatures[ptr:ptr+BATCH_SIZE], trainLabels[ptr:ptr+BATCH_SIZE]
         ptr+=BATCH_SIZE
         sess.run(minimize ,{data: inp, target: out})
 
@@ -181,7 +192,7 @@ for i in range(n_epochs):
             "{:.5f}".format(acc)
 
           # Calculate test accuracy and loss
-          acc, loss = sess.run([accuracy, cross_entropy], {data: x_dev, target: y_dev})
+          acc, loss = sess.run([accuracy, cross_entropy], {data: testFeatures, target: testLabels})
           test_accuracies.append(acc)
           test_losses.append(loss)
           print "Testing Loss= " + "{:.6f}".format(loss) + \
@@ -189,7 +200,7 @@ for i in range(n_epochs):
 
 
 # Final evaluation of test accuracy and loss
-acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], {data: x_dev, target: y_dev})
+acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], {data: testFeatures, target: testLabels})
 print "Testing Loss= " + "{:.6f}".format(loss) + \
       ", Testing Accuracy= " + "{:.5f}".format(acc)
 
