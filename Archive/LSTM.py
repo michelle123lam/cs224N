@@ -13,7 +13,8 @@ import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from sklearn import metrics
-
+from utils.treebank import StanfordSentiment
+import utils.glove as glove
 
 def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename, y_var_name):
   x_values = [i + 1 for i in range(num_epochs)]
@@ -43,19 +44,22 @@ def getSentenceFeatures(tokens, wordVectors, sentence):
 
     # Output:
     # - sentVector: feature vector for the sentence
-    sentVector = np.zeros((wordVectors.shape[1],))
+    # sentVector = np.zeros((wordVectors.shape[1],))
 
-    indices = []
+    sentVector = []
+    # indices = []
     for word in sentence:
         if tokens.get(word, 0) == 0:
             print "this word %s does not appear in the glove vector initialization" % word
         else:
-            indices.append(tokens[word])
+            # indices.append(tokens[word])
+            sentVector.append(wordVectors[tokens[word]])
 
-    sentVector = np.mean(wordVectors[indices, :], axis=0)
+    # sentVector = np.mean(wordVectors[indices, :], axis=0)
+    sentVector = np.array(sentVector)
     print sentVector.shape
 
-    assert sentVector.shape == (wordVectors.shape[1],)
+    # assert sentVector.shape == (wordVectors.shape[1],)
     return sentVector
 
 
@@ -73,6 +77,7 @@ print "The max_email_length is %d" % max_email_length
 dataset = StanfordSentiment()
 tokens = dataset.tokens()
 nWords = len(tokens)
+embedding_dim = 100
 
 # Initialize word vectors with glove.
 wordVectors = glove.loadWordVectors(tokens)
@@ -96,7 +101,7 @@ print "y_test", y_test.shape
 zeros = np.zeros((wordVectors.shape[1],))
 # Load train set and initialize with glove vectors.
 nTrain = len(x_train)
-trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))  # dimVectors should be embedding_dim
+trainFeatures = np.zeros((nTrain, embedding_dim))  # dimVectors should be embedding_dim
 trainLabels = y_train
 for i in xrange(nTrain):
     words = x_train[i]
@@ -104,24 +109,29 @@ for i in xrange(nTrain):
 
 # Prepare test set features
 nTest = len(x_test)
-testFeatures = np.zeros((nTest, FLAGS.embedding_dim))
+testFeatures = np.zeros((nTest, embedding_dim))
 testLabels = y_test
 for i in xrange(nTest):
     words = x_test[i]
     testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
 
+print "trainFeatures", trainFeatures.shape
+print "trainLabels", trainLabels.shape
+print "testFeatures", testFeatures.shape
+print "testLabels", testLabels.shape
+
 
 # ==================================================
 # LSTM
 
-NUM_EXAMPLES = x_train.shape[0] # 47411
+NUM_EXAMPLES = trainFeatures.shape[0] # 47411
 RNN_HIDDEN = 60
 LEARNING_RATE = 0.01
 
 BATCH_SIZE = 1000
-N_TIMESTEPS = 1
+N_TIMESTEPS = max_email_length # 1
 N_CLASSES = 2
-N_INPUT = x_train.shape[1] # 14080
+N_INPUT = trainFeatures.shape[1] # 14080
 keep_rate = 0.5
 
 # Account for 1 timestep
