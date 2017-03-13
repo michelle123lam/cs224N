@@ -37,6 +37,7 @@ def get_glove_data():
   # Build vocabulary
   max_email_length = max([len(x.split(" ")) for x in x_text])
   # Function that maps each email to sequences of word ids. Shorter emails will be padded.
+  print(max_email_length)
   vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
   vocabulary = vocab_processor.vocabulary_
   L = load_embedding_vectors_glove(vocabulary, "glove.6B.100d.txt", embedding_dimension)
@@ -63,7 +64,7 @@ def get_glove_data():
 def get_count_data():
 
   # Load data
-  x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
+  x_text, y = load_data_and_labels("email_contents_grouped.npy", "labels_grouped.npy")
   # Reminder: dominant sender, subordinate recipient equals label 0
 
   # Build vocabulary
@@ -89,11 +90,12 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
   plt.plot(x_values, test_accuracies)
   plt.xlabel("epoch")
   plt.ylabel("accuracy")
+  plt.ylim(ymin=0)
   plt.legend(['train', 'test'], loc='upper left')
   plt.savefig(filename)
 
 def main():
-    train_X, test_X, train_y, test_y = get_glove_data()
+    train_X, test_X, train_y, test_y = get_count_data()
 
     # Layer's sizes
     x_size = train_X.shape[1]
@@ -144,7 +146,7 @@ def main():
               % (epoch + 1, 100. * train_accuracy, 100. * test_accuracy))
 
     sess.close()
-    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlot.png")
+    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlotGrouped.png")
 
 if __name__ == '__main__':
     main()
