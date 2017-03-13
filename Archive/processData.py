@@ -108,8 +108,12 @@ def load_data_and_labels(email_contents_file, labels_file):
     x_text = np.load(email_contents_file)
     x_text = [clean_str(email.strip()) for email in x_text]  # Split by words and clean with regex
     labels = np.array(np.load(labels_file))
-    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
-    labels = np.array(labels)
+    superior_sender = [a for a in labels if a == 0]
+    superior_recipient = [a for a in labels if a == 1]
+
+    superior_sender_labels = [[1, 0] for _ in superior_sender]
+    superior_recipient_labels = [[0, 1] for _ in superior_recipient]
+    labels = np.concatenate([superior_sender_labels, superior_recipient_labels], 0)
 
     # Finish loading the datasets as arrays, then test it with print statement
 
@@ -182,6 +186,7 @@ def load_embedding_vectors_glove(vocabulary, filename, vector_size):
     # load embedding_vectors from the glove
     # initial matrix with random uniform
     embedding_vectors = np.random.uniform(-0.25, 0.25, (len(vocabulary), vector_size))
+    print embedding_vectors.shape
     f = open(filename)
     for line in f:
         values = line.split()
