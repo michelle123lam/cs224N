@@ -83,21 +83,15 @@ def clean_str(email):
     """
     Return a string of the e-mail words.
     """
-    splitted = email.strip().split()[1:]
-
     # Create regexes for punctuation
     punctuation = ''.join(string.punctuation)
     whitespace_punc_regex1 = r'([a-zA-Z0-9])([' + punctuation + '])'
     whitespace_punc_regex2 = r'([' + punctuation + '])([a-zA-Z0-9])'
 
     # Adds spaces before and after punctuation
-    for i in range(len(splitted)):
-      splitted[i] = re.sub(whitespace_punc_regex1, r'\1 \2', splitted[i])
-      splitted[i] = re.sub(whitespace_punc_regex2, r'\1 \2', splitted[i])
-
-    # Deal with some peculiar encoding issues with this file
-    sentences = [w.lower() for w in splitted]
-    return sentences
+    email = re.sub(whitespace_punc_regex1, r'\1 \2', email)
+    email = re.sub(whitespace_punc_regex2, r'\1 \2', email)
+    return email
 
 def load_data_and_labels(email_contents_file, labels_file):
     """
@@ -108,9 +102,9 @@ def load_data_and_labels(email_contents_file, labels_file):
     sentences = []
     email_contents = np.load(email_contents_file)
     for email in email_contents:
-      sentences += clean_str(email)
-      # splitted = email.strip().split()[1:]
-      # sentences += [[w.lower() for w in splitted]]
+      email = clean_str(email)
+      splitted = email.strip().split()[1:]
+      sentences += [[w.lower() for w in splitted]]
 
     # Number of emails is: 67,730
     labels = np.array(np.load(labels_file))
