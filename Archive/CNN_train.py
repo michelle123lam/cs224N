@@ -82,20 +82,12 @@ def getSentenceFeatures(tokens, wordVectors, sentence):
     return sentVector
 
 # Load data
-x_text_array, y = load_data_and_labels("email_contents.npy", "labels.npy")
-print len(x_text_array)
+emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
+emails = np.array(emails)
+print "The number of e-mails is %d" % len(emails)
 
-#x_text should be an matrix where each row contains an array of the words in that email
-print x_text_array[0]
-
-max_email_length = max([len(x_array) for x_array in x_text_array])
-print "max_email_length"
-print max_email_length
-
-# Function that maps each email to sequences of word ids. Shorter emails will be padded.
-vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
-x_text_string = "".join(str(x) for x in x_text_array)
-x = np.array(list(vocab_processor.fit_transform(x_text_string)))
+max_email_length = max([len(email) for email in emails])
+print "The max_email_length is %d" % max_email_length
 
 dataset = StanfordSentiment()
 tokens = dataset.tokens()
@@ -103,22 +95,18 @@ nWords = len(tokens)
 
 # Initialize word vectors with glove.
 wordVectors = glove.loadWordVectors(tokens)
-print "word Vectors"
+print "The shape of embedding matrix is:"
 print wordVectors.shape  # Should be number of e-mails, number of embeddings
 
 # Randomly shuffle data
 np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(y)))  # Array of random numbers from 1 to # of labels.
-x_shuffled = x[shuffle_indices]
-y_shuffled = y[shuffle_indices]
+shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
+emails_shuffled = emails[shuffle_indices]
+labels_shuffled = labels[shuffle_indices]
 
 train = 0.7
 dev = 0.3
-x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=42)
-print x_train[0, :]
-
-print x_train.size
-print len(x_train)
+x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
 
 zeros = np.zeros((wordVectors.shape[1],))
 # Load train set and initialize with glove vectors.
@@ -127,10 +115,6 @@ trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))  # dimVectors should be 
 trainLabels = y_train
 for i in xrange(nTrain):
     words = x_train[i]
-    # Do not add the train features & remove from labels if there are no words that are in the GloVe matrix.
-    # if getSentenceFeatures == zeros:
-
-    # else:
     trainFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
 
 # Prepare test set features
@@ -149,7 +133,7 @@ with tf.Graph().as_default():
     sess = tf.Session(config=session_conf)
     with sess.as_default():
         cnn = TextCNN(
-            sequence_length=x_train.shape[1],
+            sequence_length=max_email_length,
             num_classes=2,
             vocab_size=len(vocab_processor.vocabulary_),
             embedding_size=FLAGS.embedding_dim,
