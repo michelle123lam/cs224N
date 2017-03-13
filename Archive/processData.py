@@ -108,12 +108,8 @@ def load_data_and_labels(email_contents_file, labels_file):
     x_text = np.load(email_contents_file)
     x_text = [clean_str(email.strip()) for email in x_text]  # Split by words and clean with regex
     labels = np.array(np.load(labels_file))
-    superior_sender = [a for a in labels if a == 0]
-    superior_recipient = [a for a in labels if a == 1]
-
-    superior_sender_labels = [[1, 0] for _ in superior_sender]
-    superior_recipient_labels = [[0, 1] for _ in superior_recipient]
-    labels = np.concatenate([superior_sender_labels, superior_recipient_labels], 0)
+    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
+    labels = np.array(labels)
 
     # Finish loading the datasets as arrays, then test it with print statement
 
