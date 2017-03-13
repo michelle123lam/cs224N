@@ -16,6 +16,9 @@ def get_power_labels_and_indices(d_emails):
   """Returns power labels for each email"""
   labels = []
 
+  #additional feature
+  num_recipients = []
+
   dominance_map = {}
   # read in dominance tuples file in the form (boss, subordinate): immediate?
   with open('Columbia_Enron_DominanceTuples.csv') as file:
@@ -31,6 +34,8 @@ def get_power_labels_and_indices(d_emails):
     d_emails = json.load(file)
   email_contents = [] # text content of each email
 
+  dom_sub = 0
+  sub_dom = 0
   for i in range(0, 276279):
     email = d_emails[str(i)]
 
@@ -66,11 +71,16 @@ def get_power_labels_and_indices(d_emails):
       if (int(sender), int(recipients[j])) in dominance_map:
         email_contents.append(content) # Add email contents to list
         labels.append(0)
+        num_recipients.append(len(recipients))
+        dom_sub += 1
       elif (int(recipients[j]), int(sender)) in dominance_map:
         email_contents.append(content) # Add email contents to list
+        num_recipients.append(len(recipients))
         labels.append(1)
-
-  print len(labels)
+        sub_dom += 1
+  print("Dominant-Subordinates: " + str(dom_sub))
+  print("Subordinate-Dominants: " + str(sub_dom))
+  print("Totals: " + str(len(labels)))
 
   return labels, email_contents
 
@@ -163,9 +173,10 @@ def load_emails():
 
 # 94,273 gender "labelled"
 # 58,490 are actually labelled with Male or Female categories.
-def load_gender_map():
+def load_other_feature_maps():
   # Create a map associating UID to gender
   gender_map = {}
+  employee_type_map = {}
   num_nonclassified = 0
   with open("Columbia_Enron_FirstName_Gender_Type.csv") as file:
     d_reader = csv.reader(file, delimiter = ",")
@@ -177,14 +188,21 @@ def load_gender_map():
       if gender == "-1":
         num_nonclassified += 1
       gender_map[uid] = gender
+      employee_type = row[4]
+      if employee_type == "NonEnron":
+        employee_type_map[uid] = 0
+      elif employee_type == "NonCore":
+        employee_type_map[uid] = 1
+      elif employee_type == "Core":
+        employee_type_map[uid] = 2
   print "The number of non-classified employees is " + str(num_nonclassified)
-  return gender_map
+  return gender_map, employee_type_map
 
 def get_gender_features():
   # Feature vector includes tuples with (gender of sender, gender of recipient)
   # 1 represents Male, 0 represents Female, -1 represents unknown
   emails = load_emails()
-  gender_map = load_gender_map()
+  gender_map, employee_type_map = load_other_feature_maps()
   print len(gender_map.keys())
   gender_feature_vector = []
 

@@ -8,7 +8,7 @@ from tensorflow.contrib import learn
 import numpy as np
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
-from processData import load_data_and_labels
+from processData import load_data_and_labels, load_embedding_vectors_glove
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
@@ -31,7 +31,36 @@ def forwardprop(X, w_1, w_2, b_1, b_2):
     yhat = tf.matmul(h, w_2) + b_2
     return yhat
 
-def get_data():
+def get_glove_data():
+  embedding_dimension = 100
+  x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
+  # Build vocabulary
+  max_email_length = max([len(x.split(" ")) for x in x_text])
+  # Function that maps each email to sequences of word ids. Shorter emails will be padded.
+  vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
+  vocabulary = vocab_processor.vocabulary_
+  L = load_embedding_vectors_glove(vocabulary, "glove.6B.100d.txt", embedding_dimension)
+
+  transformed_x = np.zeros(shape=(len(x_text), embedding_dimension))
+  for i in range (0, len(x_text)):
+    embedded_vectors = np.zeros(shape=(len(x_text[i]), embedding_dimension))
+    for j in range (0, len(x_text[i])):
+      word = x_text[i][j]
+      idx = vocabulary.get(word)
+      embedded_vectors[j] = L[idx]
+    transformed_x[i] = np.mean(embedded_vectors, axis=0)
+
+  # Randomly shuffle data
+  np.random.seed(10)
+  shuffle_indices = np.random.permutation(np.arange(len(y)))  # Array of random numbers from 1 to # of labels.
+  x_shuffled = transform_x[shuffle_indices]
+  y_shuffled = y[shuffle_indices]
+
+  train = 0.7
+  dev = 0.3
+  return train_test_split(transform_x, y, test_size=0.3, random_state=42)
+
+def get_count_data():
 
   # Load data
   x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
@@ -64,7 +93,7 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
   plt.savefig(filename)
 
 def main():
-    train_X, test_X, train_y, test_y = get_data()
+    train_X, test_X, train_y, test_y = get_glove_data()
 
     # Layer's sizes
     x_size = train_X.shape[1]
