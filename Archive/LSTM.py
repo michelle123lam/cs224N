@@ -9,7 +9,22 @@ import tensorflow as tf
 from tensorflow.contrib import learn
 from sklearn.model_selection import train_test_split
 from processData import batch_iter, load_data_and_labels, load_embedding_vectors_glove
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+from sklearn import metrics
 
+
+def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename, y_var_name):
+  x_values = [i + 1 for i in range(num_epochs)]
+  plt.figure()
+  plt.plot(x_values, train_accuracies)
+  plt.plot(x_values, test_accuracies)
+  plt.xlabel("epoch")
+  plt.ylabel(y_var_name)
+  plt.ylim(ymin=0)
+  plt.legend(['train', 'test'], loc='upper left')
+  plt.savefig(filename)
 
 # ==================================================
 # PARAMETERS
@@ -38,6 +53,7 @@ from processData import batch_iter, load_data_and_labels, load_embedding_vectors
 # LOAD DATA
 
 x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
+# x_text, y = load_data_and_labels("email_contents_grouped.npy", "labels_grouped.npy")
 print y[0]
 print "y", y.shape
 
@@ -83,7 +99,7 @@ data = tf.placeholder(tf.float32, [None, N_TIMESTEPS, N_INPUT]) # (batch_size, n
 target = tf.placeholder(tf.float32, [None, N_CLASSES])
 
 cell = tf.contrib.rnn.BasicLSTMCell(RNN_HIDDEN)
-cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=keep_rate, output_keep_prob=keep_rate)
+# cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=keep_rate, output_keep_prob=keep_rate)
 rnn_outputs, rnn_states = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32)
 print "rnn_outputs1", rnn_outputs.get_shape()
 # rnn_outputs = tf.transpose(rnn_outputs, [1, 0, 2])
@@ -102,8 +118,11 @@ cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pr
 optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
 minimize = optimizer.minimize(cross_entropy)
 
+y_p = tf.argmax(prediction, 1)
+y_t = tf.argmax(target, 1)
+
 # Evaluate model
-correct_pred = tf.equal(tf.argmax(target, 1), tf.argmax(prediction, 1))
+correct_pred = tf.equal(y_t, y_p)
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
 # Execution of the graph
@@ -137,26 +156,13 @@ sess.run(init_op)
 # ==================================================
 # RUN LSTM EPOCHS
 
-validation_metrics = {
-  "accuracy":
-    tf.contrib.learn.metric_spec.MetricSpec(
-      metric_fn=tf.contrib.metrics.streaming_accuracy,
-      prediction_key=tf.contrib.learn.prediction_key.PredictionKey.
-      CLASSES),
-  "precision":
-    tf.contrib.learn.metric_spec.MetricSpec(
-      metric_fn=tf.contrib.metrics.streaming_precision,
-      prediction_key=tf.contrib.learn.prediction_key.PredictionKey.
-      CLASSES),
-  "recall":
-    tf.contrib.learn.metric_spec.MetricSpec(
-      metric_fn=tf.contrib.metrics.streaming_recall,
-      prediction_key=tf.contrib.learn.prediction_key.PredictionKey.
-      CLASSES)
-}
-
 no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE)
 n_epochs = 10
+
+train_accuracies = []
+train_losses = []
+test_accuracies = []
+test_losses = []
 
 for i in range(n_epochs):
     ptr = 0
@@ -167,22 +173,36 @@ for i in range(n_epochs):
 
         if j % no_of_batches == 0:
           # Calculate batch accuracy and loss
-          acc = sess.run(accuracy, {data: inp, target: out})
-          loss = sess.run(cross_entropy, {data: inp, target: out})
+          acc, loss = sess.run([accuracy, cross_entropy] , {data: inp, target: out})
+          train_accuracies.append(acc)
+          train_losses.append(loss)
           print "Iter " + str(i*BATCH_SIZE) + ", Minibatch Loss= " + \
             "{:.6f}".format(loss) + ", Training Accuracy= " + \
             "{:.5f}".format(acc)
 
           # Calculate test accuracy and loss
-          acc = sess.run(accuracy, {data: x_dev, target: y_dev})
-          loss = sess.run(cross_entropy, {data: x_dev, target: y_dev})
+          acc, loss = sess.run([accuracy, cross_entropy], {data: x_dev, target: y_dev})
+          test_accuracies.append(acc)
+          test_losses.append(loss)
           print "Testing Loss= " + "{:.6f}".format(loss) + \
                 ", Testing Accuracy= " + "{:.5f}".format(acc)
 
+
 # Final evaluation of test accuracy and loss
-acc = sess.run(accuracy, {data: x_dev, target: y_dev})
-loss = sess.run(cross_entropy, {data: x_dev, target: y_dev})
+acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], {data: x_dev, target: y_dev})
 print "Testing Loss= " + "{:.6f}".format(loss) + \
       ", Testing Accuracy= " + "{:.5f}".format(acc)
+
+# Plot accuracies, losses over time
+plotAccuracyVsTime(n_epochs, train_accuracies, test_accuracies, "LSTMAccuracyPlot.png", "accuracy")
+plotAccuracyVsTime(n_epochs, train_losses, test_losses, "LSTMLossPlot.png", "cross-entropy loss")
+
+# Report precision, recall, F1
+print "Precision: {}%".format(100*metrics.precision_score(y_target, y_pred, average="weighted"))
+print "Recall: {}%".format(100*metrics.recall_score(y_target, y_pred, average="weighted"))
+print "f1_score: {}%".format(100*metrics.f1_score(y_target, y_pred, average="weighted"))
+
+
+
 sess.close()
 
