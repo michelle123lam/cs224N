@@ -1,5 +1,5 @@
 """
-RNN using LSTM cells based on TensorFlow tutorial
+RNN using LSTM cells
 Michelle Lam - Winter 2017
 """
 
@@ -8,120 +8,259 @@ import random
 import tensorflow as tf
 from tensorflow.contrib import learn
 from sklearn.model_selection import train_test_split
-from processData import batch_iter, load_data_and_labels, load_embedding_vectors_glove
+from processData import batch_iter, load_data_and_labels, load_data_and_labels_bow
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from sklearn import metrics
+from utils.treebank import StanfordSentiment
+import utils.glove as glove
+
+# ==================================================
+# PARAMETERS
+
+# Feature representation settings
+tf.flags.DEFINE_boolean("use_grouped", False, "Enable/disable grouped (sender, recipient) features (default: False)")
+tf.flags.DEFINE_boolean("use_word_embeddings", False, "Enable/disable the word embedding (default: False)")
+
+# Model parameters
+tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
+# tf.flags.DEFINE_integer("embedding_dim", 50, "Dimensionality of character embedding (default: 128)")
+# tf.flags.DEFINE_integer("l2_reg_lambda", 0, "L2 regularization lambda (default: 0.0)")
+
+# Training parameters
+tf.flags.DEFINE_integer("batch_size", 1000, "Batch Size (default: 1000)")
+tf.flags.DEFINE_integer("num_epochs", 10, "Number of training epochs (default: 10)")
 
 
-def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename, y_var_name):
+FLAGS = tf.flags.FLAGS
+FLAGS._parse_flags()
+print("\nParameters:")
+for attr, value in sorted(FLAGS.__flags.items()):
+    print("{}={}".format(attr, value))
+print("")
+
+
+# ==================================================
+# HELPER FUNCTIONS
+
+def plotAccuracyVsTime(num_epochs, train_metrics, test_metrics, filename, y_var_name):
+  """
+  Plots metric (ex: accuracy, loss) over all epochs for train and test sets
+  """
   x_values = [i + 1 for i in range(num_epochs)]
   plt.figure()
-  plt.plot(x_values, train_accuracies)
-  plt.plot(x_values, test_accuracies)
+  plt.plot(x_values, train_metrics)
+  plt.plot(x_values, test_metrics)
   plt.xlabel("epoch")
   plt.ylabel(y_var_name)
   plt.ylim(ymin=0)
   plt.legend(['train', 'test'], loc='upper left')
   plt.savefig(filename)
 
+
+def getSentenceFeatures(tokens, wordVectors, sentence, max_email_length, isTest=False):
+    """
+    Implement computation for the sentence features given a sentence.
+    Inputs:
+    - tokens -- a dictionary that maps words to their indices in
+              the word vector list
+    - wordVectors -- word vectors (each row) for all tokens
+    - sentence -- a list of words in the sentence of interest
+    Output:
+    - sentVector: feature vector for the sentence; (n_words, word_vec_dims) size
+    """
+    result = np.zeros((max_email_length, wordVectors.shape[1],))
+    sentVector = [wordVectors[tokens[word]] for word in sentence if tokens.get(word, 0) != 0]
+    sentVector = np.array(sentVector)
+
+    # TEMP:
+    if sentVector.shape[0] > max_word_vecs:
+      max_word_vecs = sentVector.shape[0]
+
+    if sentVector.shape[0] > max_email_length: # trim to be size of max accepted num words
+      sentVector = sentVector[:max_email_length]
+
+    if sentVector.shape[0] != 0: # at least 1 matching word vector
+      result[:sentVector.shape[0], :sentVector.shape[1]] = sentVector
+
+    # Update length of current feature
+    if isTest:
+      testFeature_lens.append(sentVector.shape[0])
+    else:
+      trainFeature_lens.append(sentVector.shape[0])
+
+    return result
+
+
 # ==================================================
-# PARAMETERS
-# Model Hyperparameters
-# tf.flags.DEFINE_boolean("enable_word_embeddings", True, "Enable/disable the word embedding (default: True)")
+# LOAD + PREPARE  DATA
 
-# FLAGS = tf.flags.FLAGS
-# FLAGS._parse_flags()
-# print("\nParameters:")
-# for attr, value in sorted(FLAGS.__flags.items()):
-#     print("{}={}".format(attr.upper(), value))
-# print("")
+# Assign correct data source
+email_contents_file = ""
+labels_file = ""
+if FLAGS.use_grouped:
+  # Use features grouped by (sender, recipient) pairs
+  email_contents_file = "email_contents_grouped.npy"
+  labels_file = "labels_grouped.npy"
+else:
+  # Use features for each email
+  email_contents_file = "email_contents.npy"
+  labels_file = "labels.npy"
 
-# # Setup for word embeddings
-# with open("config.yml", 'r') as ymlfile:
-#     cfg = yaml.load(ymlfile)
+max_word_vecs = 0 # TEMP: store maximum number of word vectors among emails
+if FLAGS.use_word_embeddings:
+  # ==================================================
+  # Processing for concatenated word vector features
 
-# if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-#     embedding_name = cfg['word_embeddings']['default']
-#     embedding_dimension = cfg['word_embeddings'][embedding_name]['dimension']
-# else:
-#     embedding_dimension = FLAGS.embedding_dim
+  emails, labels = load_data_and_labels(email_contents_file, labels_file)
+  emails = np.array(emails)
 
 
-# ==================================================
-# LOAD DATA
+  # Randomly shuffle data
+  np.random.seed(10)
+  shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
+  emails_shuffled = emails[shuffle_indices]
+  labels_shuffled = labels[shuffle_indices]
 
-x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
-# x_text, y = load_data_and_labels("email_contents_grouped.npy", "labels_grouped.npy")
-print y[0]
-print "y", y.shape
+  # Split data into train and test set
+  train = 0.7
+  dev = 0.3
+  x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
+  x_train = x_train[:20000]
+  x_test = x_test[:20000]
+  y_train = y_train[:20000]
+  y_test = y_test[:20000]
+  print "x_train", x_train.shape
+  print "x_test", x_test.shape
+  print "y_train", y_train.shape
+  print "y_test", y_test.shape
 
-# Build vocabulary
-max_email_length = max([len(x.split(" ")) for x in x_text])
-# Function that maps each email to sequences of word ids. Shorter emails will be padded.
-vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
-# x is a matrix where each row contains a vector of integers corresponding to a word.
-x = np.array(list(vocab_processor.fit_transform(x_text)))
-print "x", x.shape
+  emails = np.array(emails)
+  print "emails shape:", emails.shape
 
-# Randomly shuffle data
-np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(y)))  # Array of random numbers from 1 to # of labels.
-x_shuffled = x[shuffle_indices]
-y_shuffled = y[shuffle_indices]
+  # max_email_length = max([len(email) for email in emails])
+  max_email_length = 999 # TEMP
+  print "The max_email_length is %d" % max_email_length
 
-train = 0.7
-dev = 0.3
-x_train, x_dev, y_train, y_dev = train_test_split(x, y, test_size=0.3, random_state=42)
-x_train = np.expand_dims(x_train, axis=1)
-x_dev = np.expand_dims(x_dev, axis=1)
-print "x_train", x_train.shape
-print "x_dev", x_dev.shape
-print "y_train", y_train.shape
-print "y_dev", y_dev.shape
+  dataset = StanfordSentiment()
+  tokens = dataset.tokens()
+  nWords = len(tokens)
+  embedding_dim = 100
+
+  # Initialize word vectors with glove.
+  wordVectors = glove.loadWordVectors(tokens)
+  print "The shape of embedding matrix is:"
+  print wordVectors.shape  # Should be number of e-mails, number of embeddings
+
+  # Load train set and initialize with glove vectors.
+  nTrain = len(x_train)
+  trainFeature_lens = []
+  trainFeatures = [getSentenceFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+  trainFeatures = np.array(trainFeatures)
+  trainLabels = y_train
+  print "Completed trainFeatures!"
+  print "trainFeatures", trainFeatures.shape
+  print "trainLabels", trainLabels.shape
+
+  # Prepare test set features
+  nTest = len(x_test)
+  testFeature_lens = []
+  testFeatures = [getSentenceFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+  testFeatures = np.array(testFeatures)
+  testLabels = y_test
+  print "Completed testFeatures!"
+  print "testFeatures", testFeatures.shape
+  print "testLabels", testLabels.shape
+
+  print "max_word_vecs", max_word_vecs
+
+else:
+  # ==================================================
+  # Processing for bag-of-words (vector of word counts per email)
+
+  x_text, labels = load_data_and_labels_bow(email_contents_file, labels_file)
+
+  # Build vocabulary
+  max_email_length = max([len(x.split(" ")) for x in x_text])
+  print "The max_email_length is %d" % max_email_length
+
+  # Function that maps each email to sequences of word ids. Shorter emails will be padded.
+  vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
+
+  # x is a matrix where each row contains a vector of integers corresponding to a word.
+  emails = np.array(list(vocab_processor.fit_transform(x_text)))
+  print "emails shape: ", emails.shape
+
+  # Randomly shuffle data
+  np.random.seed(10)
+  shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
+  emails_shuffled = emails[shuffle_indices]
+  labels_shuffled = labels[shuffle_indices]
+
+  # Split data into train and test set
+  train = 0.7
+  dev = 0.3
+  trainFeatures, testFeatures, trainLabels, testLabels = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
+
+  # Account for 1 timestep
+  trainFeatures = np.expand_dims(trainFeatures, axis=1)
+  testFeatures = np.expand_dims(testFeatures, axis=1)
+  print "trainFeatures", trainFeatures.shape
+  print "trainLabels", trainLabels.shape
+  print "testFeatures", testFeatures.shape
+  print "testLabels", testLabels.shape
 
 
 # ==================================================
 # LSTM
 
-NUM_EXAMPLES = 47411
+NUM_EXAMPLES = trainFeatures.shape[0] # 47411
+N_INPUT = trainFeatures.shape[2] # 14080
 RNN_HIDDEN = 60
 LEARNING_RATE = 0.01
-
-BATCH_SIZE = 1000
-N_TIMESTEPS = 1
 N_CLASSES = 2
-N_INPUT = 14080
-keep_rate = 0.5
+
+BATCH_SIZE = FLAGS.batch_size
+
+if FLAGS.use_word_embeddings:
+  N_TIMESTEPS = max_email_length
+else:
+  N_TIMESTEPS = 1
+
+
+keep_rate = FLAGS.dropout_keep_prob # 0.5
 
 data = tf.placeholder(tf.float32, [None, N_TIMESTEPS, N_INPUT]) # (batch_size, n_timesteps, n_features)
-target = tf.placeholder(tf.float32, [None, N_CLASSES])
+target = tf.placeholder(tf.float32, [None, N_CLASSES]) # (batch_size, n_classes)
+if FLAGS.use_word_embeddings:
+  X_lengths = tf.placeholder(tf.int32, [None]) # (batch_size); contains number of words in each sentence (to handle padding)
 
 cell = tf.contrib.rnn.BasicLSTMCell(RNN_HIDDEN)
-# cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=keep_rate, output_keep_prob=keep_rate)
-rnn_outputs, rnn_states = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32)
+if FLAGS.use_word_embeddings:
+  rnn_outputs, _ = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32, sequence_length=X_lengths)
+else:
+  rnn_outputs, _ = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32)
 print "rnn_outputs1", rnn_outputs.get_shape()
-# rnn_outputs = tf.transpose(rnn_outputs, [1, 0, 2])
-rnn_outputs = tf.reshape(rnn_outputs, [-1, RNN_HIDDEN])
+rnn_outputs = tf.transpose(rnn_outputs, [1, 0, 2])
 print "rnn_outputs2", rnn_outputs.get_shape()
+rnn_outputs = rnn_outputs[-1]
+print "rnn_outputs3", rnn_outputs.get_shape()
 
 weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN, N_CLASSES]))
-# weight = tf.get_variable("weight", shape=[RNN_HIDDEN, N_CLASSES], initializer=tf.contrib.layers.xavier_initializer())
 bias = tf.Variable(tf.constant(0.1, shape=[N_CLASSES]))
+prediction = tf.nn.softmax(tf.matmul(rnn_outputs, weight) + bias)
 print "weight", weight.get_shape()
 print "bias", bias.get_shape()
-
-prediction = tf.nn.softmax(tf.matmul(rnn_outputs, weight) + bias)
 print "prediction", prediction.get_shape()
+
 cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=target))
 optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
 minimize = optimizer.minimize(cross_entropy)
 
+# Evaluate model
 y_p = tf.argmax(prediction, 1)
 y_t = tf.argmax(target, 1)
-
-# Evaluate model
 correct_pred = tf.equal(y_t, y_p)
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
@@ -130,34 +269,12 @@ init_op = tf.global_variables_initializer()
 sess = tf.Session()
 sess.run(init_op)
 
-# # Load word embeddings
-# if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-#   vocabulary = vocab_processor.vocabulary_
-#   initW = None
-#   if embedding_name == 'word2vec':
-#     # load embedding vectors from the word2vec
-#     print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
-#     initW = load_embedding_vectors_word2vec(vocabulary,
-#                                            cfg['word_embeddings']['word2vec']['path'],
-#                                            cfg['word_embeddings']['word2vec']['binary'])
-#     print("word2vec file has been loaded")
-#   elif embedding_name == 'glove':
-#     # load embedding vectors from the glove
-#     print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
-#     initW = load_embedding_vectors_glove(vocabulary,
-#                                         cfg['word_embeddings']['glove']['path'],
-#                                         embedding_dimension)
-#     print("glove file has been loaded\n")
-#     print "size of embedding matrix is: "
-#     print initW.shape
-#   sess.run(cnn.W.assign(initW))
-
 
 # ==================================================
 # RUN LSTM EPOCHS
 
 no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE)
-n_epochs = 10
+n_epochs = FLAGS.num_epochs
 
 train_accuracies = []
 train_losses = []
@@ -167,29 +284,47 @@ test_losses = []
 for i in range(n_epochs):
     ptr = 0
     for j in range(no_of_batches):
-        inp, out = x_train[ptr:ptr+BATCH_SIZE], y_train[ptr:ptr+BATCH_SIZE]
-        ptr+=BATCH_SIZE
-        sess.run(minimize ,{data: inp, target: out})
+      inp, out = trainFeatures[ptr:ptr+BATCH_SIZE], trainLabels[ptr:ptr+BATCH_SIZE]
+      feed_dict = {
+        data: inp,
+        target: out,
+      }
+      if FLAGS.use_word_embeddings:
+        x_lens = trainFeature_lens[ptr:ptr+BATCH_SIZE]
+        feed_dict[X_lengths] = x_lens
+      ptr+=BATCH_SIZE
+      sess.run(minimize, feed_dict)
+      if j % no_of_batches == 0:
+        # Calculate batch accuracy and loss
+        acc, loss = sess.run([accuracy, cross_entropy], feed_dict)
+        train_accuracies.append(acc)
+        train_losses.append(loss)
+        print "Iter " + str(i*BATCH_SIZE) + ", Minibatch Loss= " + \
+          "{:.6f}".format(loss) + ", Training Accuracy= " + \
+          "{:.5f}".format(acc)
 
-        if j % no_of_batches == 0:
-          # Calculate batch accuracy and loss
-          acc, loss = sess.run([accuracy, cross_entropy] , {data: inp, target: out})
-          train_accuracies.append(acc)
-          train_losses.append(loss)
-          print "Iter " + str(i*BATCH_SIZE) + ", Minibatch Loss= " + \
-            "{:.6f}".format(loss) + ", Training Accuracy= " + \
-            "{:.5f}".format(acc)
-
-          # Calculate test accuracy and loss
-          acc, loss = sess.run([accuracy, cross_entropy], {data: x_dev, target: y_dev})
-          test_accuracies.append(acc)
-          test_losses.append(loss)
-          print "Testing Loss= " + "{:.6f}".format(loss) + \
-                ", Testing Accuracy= " + "{:.5f}".format(acc)
+        # Calculate test accuracy and loss
+        feed_dict = {
+          data: testFeatures,
+          target: testLabels,
+        }
+        if FLAGS.use_word_embeddings:
+          feed_dict[X_lengths] = testFeature_lens
+        acc, loss = sess.run([accuracy, cross_entropy], feed_dict)
+        test_accuracies.append(acc)
+        test_losses.append(loss)
+        print "Testing Loss= " + "{:.6f}".format(loss) + \
+              ", Testing Accuracy= " + "{:.5f}".format(acc)
 
 
 # Final evaluation of test accuracy and loss
-acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], {data: x_dev, target: y_dev})
+feed_dict = {
+  data: testFeatures,
+  target: testLabels,
+}
+if FLAGS.use_word_embeddings:
+  feed_dict[X_lengths] = testFeature_lens
+acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], feed_dict)
 print "Testing Loss= " + "{:.6f}".format(loss) + \
       ", Testing Accuracy= " + "{:.5f}".format(acc)
 
@@ -201,7 +336,6 @@ plotAccuracyVsTime(n_epochs, train_losses, test_losses, "LSTMLossPlot.png", "cro
 print "Precision: {}%".format(100*metrics.precision_score(y_target, y_pred, average="weighted"))
 print "Recall: {}%".format(100*metrics.recall_score(y_target, y_pred, average="weighted"))
 print "f1_score: {}%".format(100*metrics.f1_score(y_target, y_pred, average="weighted"))
-
 
 
 sess.close()

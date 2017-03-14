@@ -6,6 +6,7 @@ import json
 import argparse
 import numpy as np
 import re
+import string
 
 def writeSplitJson(old_filename, new_filename, n_per_file):
   """Write proper version of json"""
@@ -97,6 +98,38 @@ def clean_str(string):
      string = re.sub(r"\?", " \? ", string)
      string = re.sub(r"\s{2,}", " ", string)
      return string.strip().lower()
+
+def clean_str_unused(email):
+    """
+    Return a string of the e-mail words.
+    """
+    # Create regexes for punctuation
+    punctuation = ''.join(string.punctuation)
+    whitespace_punc_regex1 = r'([a-zA-Z0-9])([' + punctuation + '])'
+    whitespace_punc_regex2 = r'([' + punctuation + '])([a-zA-Z0-9])'
+
+    # Adds spaces before and after punctuation
+    email = re.sub(whitespace_punc_regex1, r'\1 \2', email)
+    email = re.sub(whitespace_punc_regex2, r'\1 \2', email)
+    return email
+
+def load_data_and_labels_bow(email_contents_file, labels_file):
+    """
+    Splits the data into words and generates labels.
+    Returns split sentences and labels.
+    """
+    # Load data from files
+    x_text = np.load(email_contents_file)
+    x_text = [clean_str(email.strip()) for email in x_text]  # Split by words and clean with regex
+    labels = np.array(np.load(labels_file))
+    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
+    labels = np.array(labels)
+
+    # Finish loading the datasets as arrays, then test it with print statement
+
+    # x_text contains an array of strings for all examples
+    # y contains an array of labels for all examples
+    return [x_text, labels]
 
 def load_data_and_labels(email_contents_file, labels_file):
     """
