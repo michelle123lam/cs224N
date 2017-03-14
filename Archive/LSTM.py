@@ -25,11 +25,13 @@ tf.flags.DEFINE_boolean("use_word_embeddings", False, "Enable/disable the word e
 
 # Model parameters
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
+tf.flags.DEFINE_integer("num_hidden", 60, "Number of training epochs (default: 60)")
+tf.flags.DEFINE_float("learning_rate", 0.01, "Number of training epochs (default: 0.01)")
 # tf.flags.DEFINE_integer("embedding_dim", 50, "Dimensionality of character embedding (default: 128)")
 # tf.flags.DEFINE_integer("l2_reg_lambda", 0, "L2 regularization lambda (default: 0.0)")
 
 # Training parameters
-tf.flags.DEFINE_integer("batch_size", 1000, "Batch Size (default: 1000)")
+tf.flags.DEFINE_integer("batch_size", 1000, "Batch Size (default: 100)")
 tf.flags.DEFINE_integer("num_epochs", 10, "Number of training epochs (default: 10)")
 
 
@@ -74,10 +76,6 @@ def getSentenceFeatures(tokens, wordVectors, sentence, max_email_length, isTest=
     sentVector = [wordVectors[tokens[word]] for word in sentence if tokens.get(word, 0) != 0]
     sentVector = np.array(sentVector)
 
-    # TEMP:
-    if sentVector.shape[0] > max_word_vecs:
-      max_word_vecs = sentVector.shape[0]
-
     if sentVector.shape[0] > max_email_length: # trim to be size of max accepted num words
       sentVector = sentVector[:max_email_length]
 
@@ -90,6 +88,15 @@ def getSentenceFeatures(tokens, wordVectors, sentence, max_email_length, isTest=
     else:
       trainFeature_lens.append(sentVector.shape[0])
 
+    # TEMP:
+    # print "sentVector.shape[0]", sentVector.shape[0]
+    # if isTest:
+    #   print "testFeature_lens[-1]", testFeature_lens[-1]
+    #   print "len(testFeature_lens)", len(testFeature_lens)
+    # else:
+    #   print "trainFeature_lens[-1]", trainFeature_lens[-1]
+    #   print "len(trainFeature_lens)", len(trainFeature_lens)
+    # print ""
     return result
 
 
@@ -108,7 +115,6 @@ else:
   email_contents_file = "email_contents.npy"
   labels_file = "labels.npy"
 
-max_word_vecs = 0 # TEMP: store maximum number of word vectors among emails
 if FLAGS.use_word_embeddings:
   # ==================================================
   # Processing for concatenated word vector features
@@ -127,10 +133,10 @@ if FLAGS.use_word_embeddings:
   train = 0.7
   dev = 0.3
   x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
-  x_train = x_train[:20000]
-  x_test = x_test[:20000]
-  y_train = y_train[:20000]
-  y_test = y_test[:20000]
+  x_train = x_train[:1000]
+  x_test = x_test[:1000]
+  y_train = y_train[:1000]
+  y_test = y_test[:1000]
   print "x_train", x_train.shape
   print "x_test", x_test.shape
   print "y_train", y_train.shape
@@ -162,6 +168,7 @@ if FLAGS.use_word_embeddings:
   print "Completed trainFeatures!"
   print "trainFeatures", trainFeatures.shape
   print "trainLabels", trainLabels.shape
+  print "trainFeature_lens", trainFeature_lens[:10]
 
   # Prepare test set features
   nTest = len(x_test)
@@ -172,8 +179,10 @@ if FLAGS.use_word_embeddings:
   print "Completed testFeatures!"
   print "testFeatures", testFeatures.shape
   print "testLabels", testLabels.shape
+  print "testFeature_lens", testFeature_lens[:10]
 
-  print "max_word_vecs", max_word_vecs
+
+  # print "max_word_vecs", max_word_vecs
 
 else:
   # ==================================================
@@ -217,8 +226,9 @@ else:
 
 NUM_EXAMPLES = trainFeatures.shape[0] # 47411
 N_INPUT = trainFeatures.shape[2] # 14080
-RNN_HIDDEN = 60
-LEARNING_RATE = 0.01
+RNN_HIDDEN = FLAGS.num_hidden #60
+LEARNING_RATE = FLAGS.learning_rate
+keep_rate = FLAGS.dropout_keep_prob # 0.5
 N_CLASSES = 2
 
 BATCH_SIZE = FLAGS.batch_size
@@ -228,8 +238,6 @@ if FLAGS.use_word_embeddings:
 else:
   N_TIMESTEPS = 1
 
-
-keep_rate = FLAGS.dropout_keep_prob # 0.5
 
 data = tf.placeholder(tf.float32, [None, N_TIMESTEPS, N_INPUT]) # (batch_size, n_timesteps, n_features)
 target = tf.placeholder(tf.float32, [None, N_CLASSES]) # (batch_size, n_classes)
