@@ -6,6 +6,7 @@ import json
 import argparse
 import numpy as np
 import re
+import string
 
 def writeSplitJson(old_filename, new_filename, n_per_file):
   """Write proper version of json"""
@@ -82,10 +83,15 @@ def clean_str(email):
     """
     Return a string of the e-mail words.
     """
-    splitted = email.strip().split()[1:]
-    # Deal with some peculiar encoding issues with this file
-    sentences += [w.lower() for w in splitted]
-    return sentences
+    # Create regexes for punctuation
+    punctuation = ''.join(string.punctuation)
+    whitespace_punc_regex1 = r'([a-zA-Z0-9])([' + punctuation + '])'
+    whitespace_punc_regex2 = r'([' + punctuation + '])([a-zA-Z0-9])'
+
+    # Adds spaces before and after punctuation
+    email = re.sub(whitespace_punc_regex1, r'\1 \2', email)
+    email = re.sub(whitespace_punc_regex2, r'\1 \2', email)
+    return email
 
 def load_data_and_labels(email_contents_file, labels_file):
     """
@@ -96,6 +102,7 @@ def load_data_and_labels(email_contents_file, labels_file):
     sentences = []
     email_contents = np.load(email_contents_file)
     for email in email_contents:
+      email = clean_str(email)
       splitted = email.strip().split()[1:]
       sentences += [[w.lower() for w in splitted]]
 
