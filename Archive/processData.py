@@ -79,7 +79,28 @@ def process_command_line():
   args = parser.parse_args()
   return args
 
-def clean_str(email):
+def clean_str(string):
+    """
+    Tokenization/string cleaning for all datasets except for SST.
+    Original taken from https://github.com/yoonkim/CNN_sentence/blob/master/process_data.py
+    """
+    string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
+    string = re.sub(r"\'s", " \'s", string)
+    string = re.sub(r"\'ve", " \'ve", string)
+    string = re.sub(r"n\'t", " n\'t", string)
+    string = re.sub(r"\'re", " \'re", string)
+    string = re.sub(r"\'d", " \'d", string)
+    string = re.sub(r"\'ll", " \'ll", string)
+    string = re.sub(r",", " , ", string)
+    string = re.sub(r"!", " ! ", string)
+    string = re.sub(r"\(", " \( ", string)
+    string = re.sub(r"\)", " \) ", string)
+    string = re.sub(r"\?", " \? ", string)
+    string = re.sub(r"\s{2,}", " ", string)
+    return string.strip().lower()
+
+
+def clean_str_unused(email):
     """
     Return a string of the e-mail words.
     """
@@ -92,6 +113,24 @@ def clean_str(email):
     email = re.sub(whitespace_punc_regex1, r'\1 \2', email)
     email = re.sub(whitespace_punc_regex2, r'\1 \2', email)
     return email
+
+def load_data_and_labels_bow(email_contents_file, labels_file):
+    """
+    Splits the data into words and generates labels.
+    Returns split sentences and labels.
+    """
+    # Load data from files
+    x_text = np.load(email_contents_file)
+    x_text = [clean_str(email.strip()) for email in x_text]  # Split by words and clean with regex
+    labels = np.array(np.load(labels_file))
+    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
+    labels = np.array(labels)
+
+    # Finish loading the datasets as arrays, then test it with print statement
+
+    # x_text contains an array of strings for all examples
+    # y contains an array of labels for all examples
+    return [x_text, labels]
 
 def load_data_and_labels(email_contents_file, labels_file):
     """
