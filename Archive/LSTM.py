@@ -1,5 +1,5 @@
 """
-RNN using LSTM cells based on TensorFlow tutorial
+RNN using LSTM cells
 Michelle Lam - Winter 2017
 """
 
@@ -28,39 +28,38 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename, 
   plt.savefig(filename)
 
 
-def getSentenceFeatures(tokens, wordVectors, sentence):
+def getSentenceFeatures(tokens, wordVectors, sentence, max_email_length, isTest=False):
     """
     Obtain the sentence feature for sentiment analysis by averaging its
     word vectors
     """
 
     # Implement computation for the sentence features given a sentence.
-
     # Inputs:
-    # tokens -- a dictionary that maps words to their indices in
+    # - tokens -- a dictionary that maps words to their indices in
     #           the word vector list
-    # wordVectors -- word vectors (each row) for all tokens
-    # sentence -- a list of words in the sentence of interest
-
+    # - wordVectors -- word vectors (each row) for all tokens
+    # - sentence -- a list of words in the sentence of interest
     # Output:
-    # - sentVector: feature vector for the sentence
-    # sentVector = np.zeros((wordVectors.shape[1],))
+    # - sentVector: feature vector for the sentence; (n_words, word_vec_dims) size
 
-    sentVector = []
-    # indices = []
-    for word in sentence:
-        if tokens.get(word, 0) == 0:
-            print "this word %s does not appear in the glove vector initialization" % word
-        else:
-            # indices.append(tokens[word])
-            sentVector.append(wordVectors[tokens[word]])
-
-    # sentVector = np.mean(wordVectors[indices, :], axis=0)
+    result = np.zeros((max_email_length, wordVectors.shape[1],))
+    sentVector = [wordVectors[tokens[word]] for word in sentence if tokens.get(word, 0) != 0]
     sentVector = np.array(sentVector)
-    print sentVector.shape
 
-    # assert sentVector.shape == (wordVectors.shape[1],)
-    return sentVector
+    if sentVector.shape[0] == 0: # no matching word vectors
+      return result
+    elif sentVector.shape[0] > max_email_length: # trim to fit max accepted num words
+      sentVector = sentVector[:max_email_length]
+
+    # Update length of current feature
+    if isTest:
+      testFeature_lens.append(sentVector.shape[0])
+    else:
+      trainFeature_lens.append(sentVector.shape[0])
+
+    result[:sentVector.shape[0], :sentVector.shape[1]] = sentVector
+    return result
 
 
 # ==================================================
@@ -71,7 +70,8 @@ emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
 emails = np.array(emails)
 print "emails shape:", emails.shape
 
-max_email_length = max([len(email) for email in emails])
+# max_email_length = max([len(email) for email in emails])
+max_email_length = 999 # TEMP
 print "The max_email_length is %d" % max_email_length
 
 dataset = StanfordSentiment()
@@ -93,6 +93,10 @@ labels_shuffled = labels[shuffle_indices]
 train = 0.7
 dev = 0.3
 x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
+x_train = x_train[:2000]
+x_test = x_test[:2000]
+y_train = y_train[:2000]
+y_test = y_test[:2000]
 print "x_train", x_train.shape
 print "x_test", x_test.shape
 print "y_train", y_train.shape
@@ -101,22 +105,23 @@ print "y_test", y_test.shape
 zeros = np.zeros((wordVectors.shape[1],))
 # Load train set and initialize with glove vectors.
 nTrain = len(x_train)
-trainFeatures = np.zeros((nTrain, embedding_dim))  # dimVectors should be embedding_dim
+trainFeature_lens = []
+trainFeatures = [getSentenceFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+trainFeatures = np.array(trainFeatures)
+
 trainLabels = y_train
-for i in xrange(nTrain):
-    words = x_train[i]
-    trainFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
+= np.append(trainFeatures, getSentenceFeatures(tokens, wordVectors, words))
+print "Completed trainFeatures!"
+print "trainFeatures", trainFeatures.shape
+print "trainLabels", trainLabels.shape
 
 # Prepare test set features
 nTest = len(x_test)
-testFeatures = np.zeros((nTest, embedding_dim))
+testFeature_lens = []
+testFeatures = [getSentenceFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+testFeatures = np.array(testFeatures)
 testLabels = y_test
-for i in xrange(nTest):
-    words = x_test[i]
-    testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
-
-print "trainFeatures", trainFeatures.shape
-print "trainLabels", trainLabels.shape
+print "Completed testFeatures!"
 print "testFeatures", testFeatures.shape
 print "testLabels", testLabels.shape
 
@@ -131,18 +136,13 @@ LEARNING_RATE = 0.01
 BATCH_SIZE = 1000
 N_TIMESTEPS = max_email_length # 1
 N_CLASSES = 2
-N_INPUT = trainFeatures.shape[1] # 14080
+N_INPUT = trainFeatures.shape[2] # 14080
 keep_rate = 0.5
-
-# Account for 1 timestep
-# x_train = np.expand_dims(x_train, axis=1)
-# x_test = np.expand_dims(x_test, axis=1)
 
 data = tf.placeholder(tf.float32, [None, N_TIMESTEPS, N_INPUT]) # (batch_size, n_timesteps, n_features)
 target = tf.placeholder(tf.float32, [None, N_CLASSES])
 
 cell = tf.contrib.rnn.BasicLSTMCell(RNN_HIDDEN)
-# cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=keep_rate, output_keep_prob=keep_rate)
 rnn_outputs, rnn_states = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32)
 print "rnn_outputs1", rnn_outputs.get_shape()
 # rnn_outputs = tf.transpose(rnn_outputs, [1, 0, 2])
@@ -150,7 +150,6 @@ rnn_outputs = tf.reshape(rnn_outputs, [-1, RNN_HIDDEN])
 print "rnn_outputs2", rnn_outputs.get_shape()
 
 weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN, N_CLASSES]))
-# weight = tf.get_variable("weight", shape=[RNN_HIDDEN, N_CLASSES], initializer=tf.contrib.layers.xavier_initializer())
 bias = tf.Variable(tf.constant(0.1, shape=[N_CLASSES]))
 print "weight", weight.get_shape()
 print "bias", bias.get_shape()
