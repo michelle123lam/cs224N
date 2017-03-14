@@ -40,63 +40,79 @@ for attr, value in sorted(FLAGS.__flags.items()):
     print("{}={}".format(attr.upper(), value))
 print("")
 
-# with open("config.yml", 'r') as ymlfile:
-#     cfg = yaml.load(ymlfile)
+with open("config.yml", 'r') as ymlfile:
+    cfg = yaml.load(ymlfile)
 
-# if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-#     embedding_name = cfg['word_embeddings']['default']
-#     embedding_dimension = cfg['word_embeddings'][embedding_name]['dimension']
-# else:
-#     embedding_dimension = FLAGS.embedding_dim
+if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
+    embedding_name = cfg['word_embeddings']['default']
+    embedding_dimension = cfg['word_embeddings'][embedding_name]['dimension']
+else:
+    embedding_dimension = FLAGS.embedding_dim
 
-def getSentenceFeatures(tokens, wordVectors, sentence):
-    """
-    Obtain the sentence feature for sentiment analysis by averaging its
-    word vectors
-    """
+# def getSentenceFeatures(tokens, wordVectors, sentence):
+#     """
+#     Obtain the sentence feature for sentiment analysis by averaging its
+#     word vectors
+#     """
 
-    # Implement computation for the sentence features given a sentence.
+#     # Implement computation for the sentence features given a sentence.
 
-    # Inputs:
-    # tokens -- a dictionary that maps words to their indices in
-    #           the word vector list
+#     # Inputs:
+#     # tokens -- a dictionary that maps words to their indices in
+#     #           the word vector list
     
-    # wordVectors -- word vectors (each row) for all tokens
-    # sentence -- a list of words in the sentence of interest
+#     # wordVectors -- word vectors (each row) for all tokens
+#     # sentence -- a list of words in the sentence of interest
 
-    # Output:
-    # - sentVector: feature vector for the sentence
-    sentVector = np.zeros((wordVectors.shape[1],))
+#     # Output:
+#     # - sentVector: feature vector for the sentence
+#     sentVector = np.zeros((wordVectors.shape[1],))
 
-    indices = []
-    for word in sentence:
-        if tokens.get(word, 0) == 0:
-            print "this word %s does not appear in the glove vector initialization" % word
-        else:
-            indices.append(tokens[word])
+#     indices = []
+#     for word in sentence:
+#         if tokens.get(word, 0) == 0:
+#             print "this word %s does not appear in tokens dictionary" % word
+#         else:
+#             indices.append(tokens[word])
 
-    sentVector = np.mean(wordVectors[indices, :], axis=0)
-    print sentVector.shape
+#     sentVector = np.mean(wordVectors[indices, :], axis=0)
 
-    assert sentVector.shape == (wordVectors.shape[1],)
-    return sentVector
+#     assert sentVector.shape == (wordVectors.shape[1],)
+#     return sentVector
 
 # Load data
 emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
 emails = np.array(emails)
 print "The number of e-mails is %d" % len(emails)
 
-max_email_length = max([len(email) for email in emails])
-print "The max_email_length is %d" % max_email_length
+max_email_length = max([len(email.split(" ")) for email in emails])
+vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
+emails = np.array(list(vocab_processor.fit_transform(emails)))
 
-dataset = StanfordSentiment()
-tokens = dataset.tokens()
-nWords = len(tokens)
+print "The max_email_length is %d" % max_email_length
+print "example email: "
+print emails[1]
+
+# dataset = StanfordSentiment()
+# tokens = dataset.tokens()
+# nWords = len(tokens)
 
 # Initialize word vectors with glove.
-wordVectors = glove.loadWordVectors(tokens)
-print "The shape of embedding matrix is:"
-print wordVectors.shape  # Should be number of e-mails, number of embeddings
+# wordVectors = glove.loadWordVectors(tokens)
+# print "The shape of embedding matrix is: "
+# print wordVectors.shape  # Should be number of e-mails, number of embeddings
+
+# nTrain = len(emails)
+# trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))
+# toRemove = []
+# for i in xrange(nTrain):
+#     words = emails[i]
+#     sentenceFeatures = getSentenceFeatures(tokens, wordVectors, words)
+#     if sentenceFeatures is None:
+#         toRemove.append(i)
+#     else:
+#         trainFeatures[i, :] = sentenceFeatures
+# labels = np.delete(labels, toRemove, axis = 0)
 
 # Randomly shuffle data
 np.random.seed(10)
@@ -108,22 +124,13 @@ train = 0.7
 dev = 0.3
 x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
 
-zeros = np.zeros((wordVectors.shape[1],))
-# Load train set and initialize with glove vectors.
-nTrain = len(x_train)
-trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))  # dimVectors should be embedding_dim
-trainLabels = y_train
-for i in xrange(nTrain):
-    words = x_train[i]
-    trainFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
-
-# Prepare test set features
-nTest = len(x_test)
-testFeatures = np.zeros((nTest, FLAGS.embedding_dim))
-testLabels = y_test
-for i in xrange(nTest):
-    words = x_test[i]
-    testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
+# # Prepare test set features
+# nTest = len(x_test)
+# testFeatures = np.zeros((nTest, FLAGS.embedding_dim))
+# testLabels = y_test
+# for i in xrange(nTest):
+#     words = x_test[i]
+#     testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
 
 # Training
 with tf.Graph().as_default():
@@ -133,7 +140,7 @@ with tf.Graph().as_default():
     sess = tf.Session(config=session_conf)
     with sess.as_default():
         cnn = TextCNN(
-            sequence_length=max_email_length,
+            sequence_length=x_train.shape[1],
             num_classes=2,
             vocab_size=len(vocab_processor.vocabulary_),
             embedding_size=FLAGS.embedding_dim,
@@ -183,31 +190,31 @@ with tf.Graph().as_default():
         os.makedirs(checkpoint_dir)
     saver = tf.train.Saver(tf.global_variables(), max_to_keep=FLAGS.num_checkpoints)
 
-    # Write vocabulary
-    vocab_processor.save(os.path.join(out_dir, "vocab"))
+    # # Write vocabulary
+    # vocab_processor.save(os.path.join(out_dir, "vocab"))
 
     # Initialize all variables
     sess.run(tf.global_variables_initializer())
 
-    # if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-    #     vocabulary = vocab_processor.vocabulary_
-    #     initW = None
-    #     if embedding_name == 'word2vec':
-    #         # load embedding vectors from the word2vec
-    #         print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
-    #         initW = load_embedding_vectors_word2vec(vocabulary,
-    #                                                              cfg['word_embeddings']['word2vec']['path'],
-    #                                                              cfg['word_embeddings']['word2vec']['binary'])
-    #         print("word2vec file has been loaded")
-    #     elif embedding_name == 'glove':
-    #         # load embedding vectors from the glove
-    #         print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
-    #         initW = load_embedding_vectors_glove(vocabulary,
-    #                                                           cfg['word_embeddings']['glove']['path'],
-    #                                                           embedding_dimension)
-    #         print("glove file has been loaded\n")
+    if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
+        vocabulary = vocab_processor.vocabulary_
+        initEmbedding = None
+        if embedding_name == 'word2vec':
+            # load embedding vectors from the word2vec
+            print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
+            initEmbedding = load_embedding_vectors_word2vec(vocabulary,
+                                                                 cfg['word_embeddings']['word2vec']['path'],
+                                                                 cfg['word_embeddings']['word2vec']['binary'])
+            print("word2vec file has been loaded")
+        elif embedding_name == 'glove':
+            # load embedding vectors from the glove
+            print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
+            initEmbedding = load_embedding_vectors_glove(vocabulary,
+                                                              cfg['word_embeddings']['glove']['path'],
+                                                              embedding_dimension)
+            print("glove file has been loaded\n")
             
-    #     sess.run(cnn.W.assign(initW))
+        sess.run(cnn.E.assign(initEmbedding))
 
     def train_step(x_batch, y_batch):
         """
@@ -244,7 +251,7 @@ with tf.Graph().as_default():
 
     # Generate batches
     batches = batch_iter(
-        list(zip(trainFeatures, trainLabels)), FLAGS.batch_size, FLAGS.num_epochs)
+        list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
     # Training loop. For each batch...
     for batch in batches:
         x_batch, y_batch = zip(*batch)

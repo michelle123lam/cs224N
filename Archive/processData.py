@@ -80,25 +80,24 @@ def process_command_line():
   return args
 
 def clean_str(string):
-    """
-    Tokenization/string cleaning for all datasets except for SST.
-    Original taken from https://github.com/yoonkim/CNN_sentence/blob/master/process_data.py
-    """
-    string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
-    string = re.sub(r"\'s", " \'s", string)
-    string = re.sub(r"\'ve", " \'ve", string)
-    string = re.sub(r"n\'t", " n\'t", string)
-    string = re.sub(r"\'re", " \'re", string)
-    string = re.sub(r"\'d", " \'d", string)
-    string = re.sub(r"\'ll", " \'ll", string)
-    string = re.sub(r",", " , ", string)
-    string = re.sub(r"!", " ! ", string)
-    string = re.sub(r"\(", " \( ", string)
-    string = re.sub(r"\)", " \) ", string)
-    string = re.sub(r"\?", " \? ", string)
-    string = re.sub(r"\s{2,}", " ", string)
-    return string.strip().lower()
-
+     """
+     Tokenization/string cleaning for all datasets except for SST.
+     Original taken from https://github.com/yoonkim/CNN_sentence/blob/master/process_data.py
+     """
+     string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
+     string = re.sub(r"\'s", " \'s", string)
+     string = re.sub(r"\'ve", " \'ve", string)
+     string = re.sub(r"n\'t", " n\'t", string)
+     string = re.sub(r"\'re", " \'re", string)
+     string = re.sub(r"\'d", " \'d", string)
+     string = re.sub(r"\'ll", " \'ll", string)
+     string = re.sub(r",", " , ", string)
+     string = re.sub(r"!", " ! ", string)
+     string = re.sub(r"\(", " \( ", string)
+     string = re.sub(r"\)", " \) ", string)
+     string = re.sub(r"\?", " \? ", string)
+     string = re.sub(r"\s{2,}", " ", string)
+     return string.strip().lower()
 
 def clean_str_unused(email):
     """
@@ -138,19 +137,15 @@ def load_data_and_labels(email_contents_file, labels_file):
     Returns split sentences and labels.
     """
     # Load data from files
-    sentences = []
     email_contents = np.load(email_contents_file)
-    for email in email_contents:
-      email = clean_str(email)
-      splitted = email.strip().split()[1:]
-      sentences += [[w.lower() for w in splitted]]
+    email_contents = [clean_str(email) for email in email_contents]
 
     # Number of emails is: 67,730
     labels = np.array(np.load(labels_file))
     labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
     labels = np.array(labels)
 
-    return [sentences, labels]
+    return [email_contents, labels]
 
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
   """
