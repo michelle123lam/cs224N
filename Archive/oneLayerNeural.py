@@ -12,6 +12,8 @@ from processData import load_data_and_labels, load_embedding_vectors_glove
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
+from utils.treebank import StanfordSentiment
+import utils.glove as glove
 
 RANDOM_SEED = 42
 tf.set_random_seed(RANDOM_SEED)
@@ -31,35 +33,91 @@ def forwardprop(X, w_1, w_2, b_1, b_2):
     yhat = tf.matmul(h, w_2) + b_2
     return yhat
 
+def getSentenceFeatures(tokens, wordVectors, sentence):
+    """
+    Obtain the sentence feature for sentiment analysis by averaging its
+    word vectors
+    """
+
+    # Implement computation for the sentence features given a sentence.
+
+    # Inputs:
+    # tokens -- a dictionary that maps words to their indices in
+    #           the word vector list
+
+    # wordVectors -- word vectors (each row) for all tokens
+    # sentence -- a list of words in the sentence of interest
+
+    # Output:
+    # - sentVector: feature vector for the sentence
+    sentVector = np.zeros((wordVectors.shape[1],))
+
+    indices = []
+    for word in sentence:
+        if tokens.get(word, 0) == 0:
+            pass
+            #print "this word %s does not appear in the glove vector initialization" % word
+        else:
+            #print "this word %s DOES appear in the glove vector initialization" % word
+            indices.append(tokens[word])
+    if len(indices) == 0:
+      return None
+
+    sentVector = np.mean(wordVectors[indices, :], axis=0)
+
+    assert sentVector.shape == (wordVectors.shape[1],)
+    return sentVector
+
 def get_glove_data():
   embedding_dimension = 100
   x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
-  # Build vocabulary
-  max_email_length = max([len(x.split(" ")) for x in x_text])
-  # Function that maps each email to sequences of word ids. Shorter emails will be padded.
-  print(max_email_length)
-  vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
-  vocabulary = vocab_processor.vocabulary_
-  L = load_embedding_vectors_glove(vocabulary, "glove.6B.100d.txt", embedding_dimension)
+  # # Build vocabulary
+  # max_email_length = max([len(x.split(" ")) for x in x_text])
+  # # Function that maps each email to sequences of word ids. Shorter emails will be padded.
+  # print(max_email_length)
+  # vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
+  # vocabulary = vocab_processor.vocabulary_
+  # L = load_embedding_vectors_glove(vocabulary, "glove.6B.100d.txt", embedding_dimension)
+  dataset = StanfordSentiment()
+  tokens = dataset.tokens()
+  nWords = len(tokens)
 
-  transformed_x = np.zeros(shape=(len(x_text), embedding_dimension))
-  for i in range (0, len(x_text)):
-    embedded_vectors = np.zeros(shape=(len(x_text[i]), embedding_dimension))
-    for j in range (0, len(x_text[i])):
-      word = x_text[i][j]
-      idx = vocabulary.get(word)
-      embedded_vectors[j] = L[idx]
-    transformed_x[i] = np.mean(embedded_vectors, axis=0)
+  # Initialize word vectors with glove.
+  embedded_vectors = glove.loadWordVectors(tokens)
+  print "The shape of embedding matrix is:"
+  print embedded_vectors.shape  # Should be number of e-mails, number of embeddings
+
+  # transformed_x = np.zeros(shape=(len(x_text), embedding_dimension))
+  # for i in range (0, len(x_text)):
+  #   embedded_vectors = np.zeros(shape=(len(x_text[i]), embedding_dimension))
+  #   for j in range (0, len(x_text[i])):
+  #     word = x_text[i][j]
+  #     idx = vocabulary.get(word)
+  #     embedded_vectors[j] = L[idx]
+  #   transformed_x[i] = np.mean(embedded_vectors, axis=0)
+
+  nTrain = len(x_text)
+  trainFeatures = np.zeros((nTrain, embedding_dimension))
+  toRemove = []
+  for i in xrange(nTrain):
+    words = x_text[i]
+    sentenceFeatures = getSentenceFeatures(tokens, embedded_vectors, words)
+    if sentenceFeatures is None:
+      toRemove.append(i)
+    else:
+      trainFeatures[i, :] = sentenceFeatures
+
+  y = np.delete(y, toRemove, axis=0)
 
   # Randomly shuffle data
   np.random.seed(10)
   shuffle_indices = np.random.permutation(np.arange(len(y)))  # Array of random numbers from 1 to # of labels.
-  x_shuffled = transform_x[shuffle_indices]
+  x_shuffled = trainFeatures[shuffle_indices]
   y_shuffled = y[shuffle_indices]
 
   train = 0.7
   dev = 0.3
-  return train_test_split(transform_x, y, test_size=0.3, random_state=42)
+  return train_test_split(x_shuffled, y_shuffled, test_size=0.3, random_state=42)
 
 def get_count_data():
 
@@ -82,7 +140,7 @@ def get_count_data():
 
   train = 0.7
   dev = 0.3
-  return train_test_split(x, y, test_size=0.3, random_state=42)
+  return train_test_split(x_shuffled, y_shuffled, test_size=0.3, random_state=42)
 
 def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
   x_values = [i + 1 for i in range(num_epochs)]
@@ -90,12 +148,12 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
   plt.plot(x_values, test_accuracies)
   plt.xlabel("epoch")
   plt.ylabel("accuracy")
-  plt.ylim(ymin=0)
+  #plt.ylim(ymin=0)
   plt.legend(['train', 'test'], loc='upper left')
   plt.savefig(filename)
 
 def main():
-    train_X, test_X, train_y, test_y = get_count_data()
+    train_X, test_X, train_y, test_y = get_glove_data()
 
     # Layer's sizes
     x_size = train_X.shape[1]
@@ -129,7 +187,7 @@ def main():
 
     train_accuracies = []
     test_accuracies = []
-    num_epochs = 10
+    num_epochs = 30
     for epoch in range(num_epochs):
         # Train with each example
         for i in range(len(train_X)):
@@ -146,7 +204,10 @@ def main():
               % (epoch + 1, 100. * train_accuracy, 100. * test_accuracy))
 
     sess.close()
-    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlotGrouped.png")
+    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlotGlove.png")
+
+
+
 
 if __name__ == '__main__':
     main()
