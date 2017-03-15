@@ -99,20 +99,6 @@ def clean_str(string):
      string = re.sub(r"\s{2,}", " ", string)
      return string.strip().lower()
 
-def clean_str_unused(email):
-    """
-    Return a string of the e-mail words.
-    """
-    # Create regexes for punctuation
-    punctuation = ''.join(string.punctuation)
-    whitespace_punc_regex1 = r'([a-zA-Z0-9])([' + punctuation + '])'
-    whitespace_punc_regex2 = r'([' + punctuation + '])([a-zA-Z0-9])'
-
-    # Adds spaces before and after punctuation
-    email = re.sub(whitespace_punc_regex1, r'\1 \2', email)
-    email = re.sub(whitespace_punc_regex2, r'\1 \2', email)
-    return email
-
 def load_data_and_labels_bow(email_contents_file, labels_file):
     """
     Splits the data into words and generates labels.
