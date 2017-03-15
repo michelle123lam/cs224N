@@ -82,13 +82,13 @@ def get_power_labels_and_indices_grouped(d_emails):
     email_contents.append(email_contents_map[cur_key])
 
   print "# labels: %d, # email_contents: %d" % (len(labels), len(email_contents))
-  return labels, email_contents, email_ids
+  return labels, email_contents
 
 
 def get_power_labels_and_indices(d_emails):
   """Returns power labels for each email"""
 
-  gender_map, employee_type_map = load_select_feature_maps()
+  gender_map = load_select_feature_maps()
 
   labels = []
 
@@ -106,9 +106,7 @@ def get_power_labels_and_indices(d_emails):
 
   gender_feature_vector = []
 
-  employee_type_vector = []
-
-  num_recipients = []
+  num_recipients_vector = []
 
   dom_sub = 0
   sub_dom = 0
@@ -147,22 +145,32 @@ def get_power_labels_and_indices(d_emails):
       if (int(sender), int(recipients[j])) in dominance_map:
         email_contents.append(content) # Add email contents to list
         labels.append(0)
-        num_recipients.append(len(recipients))
-        sender_recipient_tuple = (gender_map.get(sender, -1), gender_map.get(recipient, -1)) #make sure you handle all cases
-        gender_feature_vector.append(sender_recipient_tuple)
         dom_sub += 1
+
+        # get num_recipients
+        num_recipients_vector.append(len(recipients))
+
+        # get gender feature
+        sender_recipient_tuple = [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]
+        gender_feature_vector.append(sender_recipient_tuple)
+
       elif (int(recipients[j]), int(sender)) in dominance_map:
         email_contents.append(content) # Add email contents to list
-        num_recipients.append(len(recipients))
         labels.append(1)
-        sender_recipient_tuple = (gender_map.get(sender, -1), gender_map.get(recipient, -1)) #make sure you handle all cases
-        gender_feature_vector.append(sender_recipient_tuple)
         sub_dom += 1
-  print("Dominant-Subordinates: " + str(dom_sub))
-  print("Subordinate-Dominants: " + str(sub_dom))
+
+        # get num_recipients
+        num_recipients_vector.append(len(recipients))
+
+        # get gender feature
+        sender_recipient_tuple = [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]
+        gender_feature_vector.append(sender_recipient_tuple)
+
+  #print("Dominant-Subordinates: " + str(dom_sub))
+  #print("Subordinate-Dominants: " + str(sub_dom))
   print("Totals: " + str(len(labels)))
 
-  return labels, email_contents
+  return labels, email_contents, num_recipients_vector, gender_feature_vector
 
 
 def bag_of_words_features(labels, d_emails):
@@ -258,25 +266,19 @@ def load_select_feature_maps():
   gender_map = {}
   employee_type_map = {}
   num_nonclassified = 0
+
   with open("Columbia_Enron_FirstName_Gender_Type.csv") as file:
     d_reader = csv.reader(file, delimiter = ",")
+    rows_read = 0
     for row in d_reader:
-      uid = row[0]
-      gender = row[5]
-      if gender == "FALSE":
-        break
-      if gender == "-1":
-        num_nonclassified += 1
-      gender_map[uid] = gender
-      employee_type = row[4]
-      if employee_type == "NonEnron":
-        employee_type_map[uid] = 0
-      elif employee_type == "NonCore":
-        employee_type_map[uid] = 1
-      elif employee_type == "Core":
-        employee_type_map[uid] = 2
-  print "The number of non-classified employees is " + str(num_nonclassified)
-  return gender_map, employee_type_map
+      if rows_read != 0:
+        uid = row[0]
+        gender = row[5]
+        if gender == "FALSE":
+          break
+        gender_map[uid] = gender
+      rows_read += 1
+  return gender_map
 
 # generate train and test sets
 def generate_two_split_dataset(input, labels):
@@ -333,8 +335,16 @@ def main():
         print "Finished saving email_contents and labels to files!"
 
       else:
-        labels, email_contents = get_power_labels_and_indices(d_emails)
+        labels, email_contents, num_recipients_vector, gender_feature_vector = get_power_labels_and_indices(d_emails)
         print "Finished getting power labels and indices!"
+
+        #save extra features to files
+        num_recipients_features = np.array(num_recipients_vector)
+        np.save('num_recipients_features.npy', num_recipients_features)
+        np.savetxt('num_recipients_features.txt', num_recipients_features)
+
+        gender_features = np.array(gender_feature_vector)
+        np.save('gender_features.npy', gender_features)
 
         # save email_contents and labels to files
         email_contents = np.array(email_contents)
