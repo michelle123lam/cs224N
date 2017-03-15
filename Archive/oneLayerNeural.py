@@ -8,12 +8,13 @@ from tensorflow.contrib import learn
 import numpy as np
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
-from processData import load_data_and_labels, load_embedding_vectors_glove
+from processData import load_data_and_labels, load_data_and_labels_bow, load_embedding_vectors_glove
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
+import createFeatVecs
 
 RANDOM_SEED = 42
 tf.set_random_seed(RANDOM_SEED)
@@ -107,7 +108,7 @@ def get_glove_data():
 def get_count_data():
 
   # Load data
-  x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
+  x_text, y = load_data_and_labels_bow("email_contents.npy", "labels.npy")
 
   # Reminder: dominant sender, subordinate recipient equals label 0
 
@@ -123,12 +124,6 @@ def get_count_data():
   shuffle_indices = np.random.permutation(np.arange(len(y)))  # Array of random numbers from 1 to # of labels.
   x_shuffled = x[shuffle_indices]
   y_shuffled = y[shuffle_indices]
-  print(x_shuffled[0])
-  print(x_shuffled[1])
-  print(x_shuffled[2])
-  print('------------------------------')
-  print vocab_processor.vocabulary_
-  exit(0)
 
   train = 0.7
   dev = 0.3
@@ -145,7 +140,7 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
   plt.savefig(filename)
 
 def main():
-    train_X, test_X, train_y, test_y = get_count_data()
+    train_X, test_X, train_y, test_y = get_glove_data()
 
     # Layer's sizes
     x_size = train_X.shape[1]
@@ -196,7 +191,7 @@ def main():
               % (epoch + 1, 100. * train_accuracy, 100. * test_accuracy))
 
     sess.close()
-    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlotGlove.png")
+    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlot.png")
 
 if __name__ == '__main__':
     main()

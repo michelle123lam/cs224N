@@ -82,15 +82,15 @@ def get_power_labels_and_indices_grouped(d_emails):
     email_contents.append(email_contents_map[cur_key])
 
   print "# labels: %d, # email_contents: %d" % (len(labels), len(email_contents))
-  return labels, email_contents
+  return labels, email_contents, email_ids
 
 
 def get_power_labels_and_indices(d_emails):
   """Returns power labels for each email"""
-  labels = []
 
-  #additional feature
-  num_recipients = []
+  gender_map, employee_type_map = load_select_feature_maps()
+
+  labels = []
 
   dominance_map = {}
   # read in dominance tuples file in the form (boss, subordinate): immediate?
@@ -103,6 +103,12 @@ def get_power_labels_and_indices(d_emails):
       rows_read += 1
 
   email_contents = [] # text content of each email
+
+  gender_feature_vector = []
+
+  employee_type_vector = []
+
+  num_recipients = []
 
   dom_sub = 0
   sub_dom = 0
@@ -142,11 +148,15 @@ def get_power_labels_and_indices(d_emails):
         email_contents.append(content) # Add email contents to list
         labels.append(0)
         num_recipients.append(len(recipients))
+        sender_recipient_tuple = (gender_map.get(sender, -1), gender_map.get(recipient, -1)) #make sure you handle all cases
+        gender_feature_vector.append(sender_recipient_tuple)
         dom_sub += 1
       elif (int(recipients[j]), int(sender)) in dominance_map:
         email_contents.append(content) # Add email contents to list
         num_recipients.append(len(recipients))
         labels.append(1)
+        sender_recipient_tuple = (gender_map.get(sender, -1), gender_map.get(recipient, -1)) #make sure you handle all cases
+        gender_feature_vector.append(sender_recipient_tuple)
         sub_dom += 1
   print("Dominant-Subordinates: " + str(dom_sub))
   print("Subordinate-Dominants: " + str(sub_dom))
@@ -243,7 +253,7 @@ def load_emails():
 
 # 94,273 gender "labelled"
 # 58,490 are actually labelled with Male or Female categories.
-def load_other_feature_maps():
+def load_select_feature_maps():
   # Create a map associating UID to gender
   gender_map = {}
   employee_type_map = {}
@@ -268,32 +278,6 @@ def load_other_feature_maps():
   print "The number of non-classified employees is " + str(num_nonclassified)
   return gender_map, employee_type_map
 
-def get_gender_features():
-  # Feature vector includes tuples with (gender of sender, gender of recipient)
-  # 1 represents Male, 0 represents Female, -1 represents unknown
-  emails = load_emails()
-  gender_map, employee_type_map = load_other_feature_maps()
-  print len(gender_map.keys())
-  gender_feature_vector = []
-
-  for email_id, email in emails.iteritems():
-    sender = str(email["from"])
-    recipient = str(email["recipients"][0])  # To-do: Handle multiple recipients
-
-    # Skip the e-mail cases where either the sender or recipient is None, or if there is more than one recipient
-    if sender is None or recipient is None:
-      continue
-
-    sender_recipient_tuple = (gender_map.get(sender, -1), gender_map.get(recipient, -1))
-    print sender_recipient_tuple
-    gender_feature_vector.append(sender_recipient_tuple)
-
-  print "length of gender feature vector is " + str(len(gender_feature_vector))
-  # length of gender feature vector is 50,000
-  return gender_feature_vector
-
-# get_gender_features()
-
 # generate train and test sets
 def generate_two_split_dataset(input, labels):
   train = 0.7
@@ -312,10 +296,6 @@ def generate_two_split_dataset(input, labels):
 
   print("Completed split into train and test datasets!")
 
-# geneate train, dev, and test sets
-def generate_three_split_dataset(input, labels):
-  pass
-
 def process_command_line():
   """Sets command-line flags"""
   parser = argparse.ArgumentParser(description="Write and read formatted Json files")
@@ -332,6 +312,7 @@ def main():
   if args.is_bow:
     with open('./enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
+
 
       if args.is_grouped:
         print "Generating *grouped* features for (sender, recipient) pairs..."
@@ -352,7 +333,7 @@ def main():
         print "Finished saving email_contents and labels to files!"
 
       else:
-        labels, email_contents  = get_power_labels_and_indices(d_emails)
+        labels, email_contents = get_power_labels_and_indices(d_emails)
         print "Finished getting power labels and indices!"
 
         # save email_contents and labels to files
@@ -376,8 +357,6 @@ def main():
         generate_two_split_dataset(all_input_counts, labels)
 
     print "Completed labels and feature vectors!"
-
-
 
 if __name__ == "__main__":
     main()
