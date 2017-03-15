@@ -25,7 +25,7 @@ tf.flags.DEFINE_integer("l2_reg_lambda", 0, "L2 regularization lambda (default: 
 
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-tf.flags.DEFINE_integer("num_epochs", 100, "Number of training epochs (default: 200)")
+tf.flags.DEFINE_integer("num_epochs", 30, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
@@ -120,8 +120,8 @@ shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of rand
 emails_shuffled = emails[shuffle_indices]
 labels_shuffled = labels[shuffle_indices]
 
-train = 0.7
-dev = 0.3
+train = 0.9
+dev = 0.1
 x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
 
 # # Prepare test set features
@@ -250,19 +250,20 @@ with tf.Graph().as_default():
             writer.add_summary(summaries, step)
 
     # Generate batches
-    batches = batch_iter(
+    train_batches = batch_iter(
         list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
+    dev_batches = batch_iter(
+        list(zip(x_test, y_test)), FLAGS.batch_size, FLAGS.num_epochs)
     # Training loop. For each batch...
-    for batch in batches:
-        x_batch, y_batch = zip(*batch)
-        train_step(x_batch, y_batch)
+    for train_batch, dev_batch in zip(train_batches, dev_batches):
+        x_train_batch, y_train_batch = zip(*train_batch)
+        train_step(x_train_batch, y_train_batch)
         current_step = tf.train.global_step(sess, global_step)
-
-        # Hold off on testing
-        # if current_step % FLAGS.evaluate_every == 0:
-        #     print("\nEvaluation @ Epoch = %d:" % batch)
-        #     dev_step(testFeatures, testLabels, writer=dev_summary_writer)
-        #     print("")
+        if current_step % FLAGS.evaluate_every == 0:
+            print("\nEvaluation:")
+            x_dev_batch, y_dev_batch = zip(*dev_batch)
+            dev_step(x_dev_batch, y_dev_batch, writer=dev_summary_writer)
+            print("")
         if current_step % FLAGS.checkpoint_every == 0:
             path = saver.save(sess, checkpoint_prefix, global_step=current_step)
             print("Saved model checkpoint to {}\n".format(path))
