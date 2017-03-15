@@ -148,6 +148,9 @@ def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, i
 
     # Update length of current feature (for word-level features)
     # TODO: update to reflect variations in sentence length
+    if sentenceFeatures.shape == ():
+      max_sentence_length = 0
+
     if isTest:
       testFeature_lens.append(max_sentence_length)
     else:
