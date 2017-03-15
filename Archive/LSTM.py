@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from sklearn import metrics
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
+from nltk import tokenize
 np.set_printoptions(threshold=np.inf)
 
 # ==================================================
@@ -90,43 +91,71 @@ def plotAccuracyVsTime(num_epochs, train_metrics, test_metrics, filename, y_var_
   plt.savefig(filename)
 
 
-def getSentenceFeatures(tokens, wordVectors, sentence, max_email_length, isTest=False):
+def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=False):
     """
-    Implement computation for the sentence features given a sentence.
+    Finds word-level features given an email
     Inputs:
     - tokens -- a dictionary that maps words to their indices in
               the word vector list
     - wordVectors -- word vectors (each row) for all tokens
-    - sentence -- a list of words in the sentence of interest
+    - email -- a list of words in the email of interest
     Output:
-    - sentVector: feature vector for the sentence; (n_words, word_vec_dims) size
+    - result: feature vector for the email; (n_words, word_vec_dims) size
     """
     result = np.zeros((max_email_length, wordVectors.shape[1],))
-    sentVector = [wordVectors[tokens[word]] for word in sentence if tokens.get(word, 0) != 0]
-    sentVector = np.array(sentVector)
+    emailVector = [wordVectors[tokens[word]] for word in email if tokens.get(word, 0) != 0]
+    emailVector = np.array(emailVector)
 
-    if sentVector.shape[0] > max_email_length: # trim to be size of max accepted num words
-      sentVector = sentVector[:max_email_length]
+    if emailVector.shape[0] > max_email_length: # trim to be size of max accepted num words
+      emailVector = emailVector[:max_email_length]
 
-    if sentVector.shape[0] != 0: # at least 1 matching word vector
-      result[:sentVector.shape[0], :sentVector.shape[1]] = sentVector
+    if emailVector.shape[0] != 0: # at least 1 matching word vector
+      result[:emailVector.shape[0], :emailVector.shape[1]] = emailVector
 
-    # Update length of current feature
+
+    if FLAGS.use_sentence_vec:
+      return result
+
+    # Update length of current feature (for word-level features)
     if isTest:
-      testFeature_lens.append(sentVector.shape[0])
+      testFeature_lens.append(emailVector.shape[0])
     else:
-      trainFeature_lens.append(sentVector.shape[0])
-
-    # TEMP:
-    # print "sentVector.shape[0]", sentVector.shape[0]
-    # if isTest:
-    #   print "testFeature_lens[-1]", testFeature_lens[-1]
-    #   print "len(testFeature_lens)", len(testFeature_lens)
-    # else:
-    #   print "trainFeature_lens[-1]", trainFeature_lens[-1]
-    #   print "len(trainFeature_lens)", len(trainFeature_lens)
-    # print ""
+      trainFeature_lens.append(emailVector.shape[0])
     return result
+
+
+def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, isTest=False):
+    """
+    Finds sentence vectors by concatenating the word vectors for the first [max_sentence_length] words in each sentence
+    Then sums all sentence vectors for each email
+    Output:
+    - result: feature vector for the email; (n_words, word_vec_dims) size
+    """
+    result = np.zeros((max_email_length, wordVectors.shape[1],))
+    sentences = tokenize.sent_tokenize(email)
+    # print "len(sentences):", len(sentences)
+
+    # Gets list of word vectors for each sentence
+    sentenceFeatures = [getWordVectorFeatures(tokens, wordVectors, sentences[i], max_sentence_length, isTest=isTest) for i in range(len(sentences))]
+    sentenceFeatures = np.array(sentenceFeatures)
+    # print "sentenceFeatures.shape", sentenceFeatures.shape
+
+    # Concatenate word vectors for each sentence and sum all sentence vectors
+    #(n_sentences, n_words, word_vec_dims)
+    sentenceFeatures = np.sum(sentenceFeatures, axis=0)
+
+    # print "result.shape:", result.shape
+
+    # Update length of current feature (for word-level features)
+    # TODO: update to reflect variations in sentence length
+    if isTest:
+      testFeature_lens.append(max_sentence_length)
+    else:
+      trainFeature_lens.append(max_sentence_length)
+
+    if sentenceFeatures.shape == ():
+      return result
+    return sentenceFeatures
 
 
 # ==================================================
@@ -144,13 +173,7 @@ else:
   email_contents_file = "email_contents.npy"
   labels_file = "labels.npy"
 
-# if FLAGS.use_sentence_vec:
-#   # ==================================================
-#   # Processing for sentence vectors
-#   # max_email_length = FLAGS.max_email_length
-#   # print "The max words in sentence is %d" % max_email_length
 
-# elif FLAGS.use_word_embeddings:
 if FLAGS.use_word_embeddings:
   # ==================================================
   # Processing for concatenated word vector features
@@ -168,10 +191,6 @@ if FLAGS.use_word_embeddings:
   train = 0.7
   dev = 0.3
   x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
-  # x_train = x_train[:1000]
-  # x_test = x_test[:1000]
-  # y_train = y_train[:1000]
-  # y_test = y_test[:1000]
   print "x_train", x_train.shape
   print "x_test", x_test.shape
   print "y_train", y_train.shape
@@ -181,7 +200,10 @@ if FLAGS.use_word_embeddings:
   print "emails shape:", emails.shape
 
   max_email_length = FLAGS.max_email_length
-  print "The max_email_length is %d" % max_email_length
+  if FLAGS.use_sentence_vec:
+    print "The max words in sentence is %d" % max_email_length
+  else:
+    print "The max_email_length is %d" % max_email_length
 
   dataset = StanfordSentiment()
   tokens = dataset.tokens()
@@ -199,7 +221,11 @@ if FLAGS.use_word_embeddings:
   # Load train set and initialize with glove vectors.
   nTrain = len(x_train)
   trainFeature_lens = []
-  trainFeatures = [getSentenceFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+  trainFeatures = []
+  if FLAGS.use_sentence_vec:
+    trainFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+  else:
+    trainFeatures = [getWordVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
   trainFeatures = np.array(trainFeatures)
   trainLabels = y_train
   print "Completed trainFeatures!"
@@ -210,7 +236,11 @@ if FLAGS.use_word_embeddings:
   # Prepare test set features
   nTest = len(x_test)
   testFeature_lens = []
-  testFeatures = [getSentenceFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+  testFeatures = []
+  if FLAGS.use_sentence_vec:
+    testFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+  else:
+    testFeatures = [getWordVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
   testFeatures = np.array(testFeatures)
   testLabels = y_test
   print "Completed testFeatures!"
