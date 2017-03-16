@@ -27,6 +27,9 @@ tf.flags.DEFINE_boolean("get_stats", False, "Get stats on input data (default: F
 tf.flags.DEFINE_boolean("use_grouped", False, "Enable/disable grouped (sender, recipient) features (default: False)")
 tf.flags.DEFINE_boolean("use_word_embeddings", False, "Enable/disable the word embedding (default: False)")
 tf.flags.DEFINE_boolean("use_sentence_vec", False, "Enable/disable sentence vector representation (default: False)")
+tf.flags.DEFINE_boolean("use_non_lexical", False, "Enable/disable additional non-lexical features (default: False)")
+tf.flags.DEFINE_integer("num_non_lexical", 2, "Number of additional non-lexical features (default: 2)")
+
 
 # Model parameters
 tf.flags.DEFINE_boolean("use_dropout", False, "Enable/disable dropout (default: False)")
@@ -88,7 +91,8 @@ def plotAccuracyVsTime(num_epochs, train_metrics, test_metrics, filename, y_var_
   plt.ylabel(y_var_name)
   plt.ylim(ymin=0)
   plt.legend(['train', 'test'], loc='upper left')
-  plt.savefig(filename)
+  dir = './lstm_logs/plots/'
+  plt.savefig(dir + filename)
 
 
 def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=False):
@@ -148,6 +152,9 @@ def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, i
 
     # Update length of current feature (for word-level features)
     # TODO: update to reflect variations in sentence length
+    if sentenceFeatures.shape == ():
+      max_sentence_length = 0
+
     if isTest:
       testFeature_lens.append(max_sentence_length)
     else:
@@ -173,6 +180,9 @@ else:
   email_contents_file = "email_contents.npy"
   labels_file = "labels.npy"
 
+# Load non-lexical features
+if FLAGS.use_non_lexical:
+  num_recipients_features = np.array(np.load("num_recipients_features.npy"))
 
 if FLAGS.use_word_embeddings:
   # ==================================================
@@ -191,6 +201,10 @@ if FLAGS.use_word_embeddings:
   train = 0.7
   dev = 0.3
   x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
+  # x_train = x_train[:1000]
+  # x_test = x_test[:1000]
+  # y_train = y_train[:1000]
+  # y_test = y_test[:1000]
   print "x_train", x_train.shape
   print "x_test", x_test.shape
   print "y_train", y_train.shape
@@ -220,6 +234,50 @@ if FLAGS.use_word_embeddings:
 
   # Load train set and initialize with glove vectors.
   nTrain = len(x_train)
+
+  trainFeatures = np.zeros((nTrain, embedding_dim + FLAGS.num_non_lexical)) #5 is the number of slots the extra features take up
+  toRemove = []
+  for i in xrange(nTrain):
+    words = x_train[i]
+
+    if FLAGS.use_non_lexical:
+      # Calculate num_words feature
+      num_words = len(words)
+      # Place number of words in buckets
+      if num_words < 10:
+          num_words_bucket = 0
+      elif num_words >= 10 and num_words < 100:
+          num_words_bucket = 1
+      elif num_words >= 100 and num_words < 500:
+          num_words_buckets = 2
+      elif num_words >= 500 and num_words < 1000:
+          num_words_buckets = 3
+      elif num_words >= 1000 and num_words < 2000:
+          num_words_buckets = 4
+      elif num_words >= 2000:
+          num_words_buckets = 5
+
+    if FLAGS.use_sentence_vec:
+      sentenceFeatures = getSentenceVectorFeatures(tokens, wordVectors, words, max_email_length)
+    else:
+      sentenceFeatures = getWordVectorFeatures(tokens, wordVectors, words, max_email_length)
+
+    if sentenceFeatures is None:
+      toRemove.append(i)
+    else:
+      if FLAGS.use_non_lexical:
+        # Add on num_recipients, num_words features
+        featureVector = np.hstack((sentenceFeatures, num_recipients_features[i]))
+        featureVector = np.hstack((featureVector, num_words_bucket))
+        trainFeatures[i, :] = featureVector
+
+  y = np.delete(y, toRemove, axis=0)
+  trainFeatures = np.delete(trainFeatures, toRemove, axis=0)
+
+
+
+
+
   trainFeature_lens = []
   trainFeatures = []
   if FLAGS.use_sentence_vec:
@@ -332,26 +390,40 @@ print "weight", weight.get_shape()
 print "bias", bias.get_shape()
 print "prediction", prediction.get_shape()
 
-cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=target))
-optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
-minimize = optimizer.minimize(cross_entropy)
+with tf.name_scope('cross_entropy'):
+  cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=target))
+  optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
+  minimize = optimizer.minimize(cross_entropy)
+tf.summary.scalar('cross-entropy', cross_entropy)
 
 # Evaluate model
-y_p = tf.argmax(prediction, 1)
-y_t = tf.argmax(target, 1)
-correct_pred = tf.equal(y_t, y_p)
-accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+with tf.name_scope('accuracy'):
+  y_p = tf.argmax(prediction, 1)
+  y_t = tf.argmax(target, 1)
+  with tf.name_scope('correct_pred'):
+    correct_pred = tf.equal(y_t, y_p)
+  with tf.name_scope('accuracy'):
+    accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+tf.summary.scalar('accuracy', accuracy)
+
+# summ_train= tf.summary.merge_all('train')
+# summ_test = tf.summary.merge_all('test')
+summ_merged = tf.summary.merge_all()
 
 # Execution of the graph
 init_op = tf.global_variables_initializer()
 sess = tf.Session()
+# Generate summary data
+writer_train = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/train', sess.graph)
+writer_test = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/test', sess.graph)
 sess.run(init_op)
+
 
 
 # ==================================================
 # RUN LSTM EPOCHS
 
-no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE)
+no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE) # num batches in one epoch
 n_epochs = FLAGS.num_epochs
 
 train_accuracies = []
@@ -371,13 +443,15 @@ for i in range(n_epochs):
         x_lens = trainFeature_lens[ptr:ptr+BATCH_SIZE]
         feed_dict[X_lengths] = x_lens
       ptr+=BATCH_SIZE
-      sess.run(minimize, feed_dict)
+      s_train, _ = sess.run([summ_merged, minimize], feed_dict)
+      writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard1
       if j % no_of_batches == 0:
         # Calculate batch accuracy and loss
-        acc, loss = sess.run([accuracy, cross_entropy], feed_dict)
+        acc, loss, s_train = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
         train_accuracies.append(acc)
         train_losses.append(loss)
-        print "Iter " + str(i*BATCH_SIZE) + ", Minibatch Loss= " + \
+        writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard2
+        print "Iter " + str(i*no_of_batches) + ", Minibatch Loss= " + \
           "{:.6f}".format(loss) + ", Training Accuracy= " + \
           "{:.5f}".format(acc)
 
@@ -388,9 +462,10 @@ for i in range(n_epochs):
         }
         if FLAGS.use_word_embeddings:
           feed_dict[X_lengths] = testFeature_lens
-        acc, loss = sess.run([accuracy, cross_entropy], feed_dict)
+        acc, loss, s_test = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
         test_accuracies.append(acc)
         test_losses.append(loss)
+        writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
         print "Testing Loss= " + "{:.6f}".format(loss) + \
               ", Testing Accuracy= " + "{:.5f}".format(acc)
 
@@ -402,7 +477,8 @@ feed_dict = {
 }
 if FLAGS.use_word_embeddings:
   feed_dict[X_lengths] = testFeature_lens
-acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], feed_dict)
+acc, loss, y_pred, y_target, s_test = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged], feed_dict)
+writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
 print "Testing Loss= " + "{:.6f}".format(loss) + \
       ", Testing Accuracy= " + "{:.5f}".format(acc)
 
@@ -419,7 +495,6 @@ plotAccuracyVsTime(n_epochs, train_losses, test_losses, loss_plot_name, "cross-e
 print "Precision: {}%".format(100*metrics.precision_score(y_target, y_pred, average="weighted"))
 print "Recall: {}%".format(100*metrics.recall_score(y_target, y_pred, average="weighted"))
 print "f1_score: {}%".format(100*metrics.f1_score(y_target, y_pred, average="weighted"))
-
 
 sess.close()
 

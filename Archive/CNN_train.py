@@ -8,7 +8,7 @@ import datetime
 from text_cnn import TextCNN
 from tensorflow.contrib import learn
 from sklearn.model_selection import train_test_split
-from processData import batch_iter, load_data_and_labels, load_embedding_vectors_word2vec, load_embedding_vectors_glove
+from processData import batch_iter, load_data_and_labels, load_data_and_labels_thread, load_embedding_vectors_word2vec, load_embedding_vectors_glove
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
 import yaml
@@ -49,88 +49,51 @@ if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not Non
 else:
     embedding_dimension = FLAGS.embedding_dim
 
-# def getSentenceFeatures(tokens, wordVectors, sentence):
-#     """
-#     Obtain the sentence feature for sentiment analysis by averaging its
-#     word vectors
-#     """
+## Load data
+# emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
+# emails = np.array(emails)
+# print "The number of e-mails is %d" % len(emails)
 
-#     # Implement computation for the sentence features given a sentence.
+# max_email_length = max([len(email.split(" ")) for email in emails])
+# vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
+# emails = np.array(list(vocab_processor.fit_transform(emails)))
 
-#     # Inputs:
-#     # tokens -- a dictionary that maps words to their indices in
-#     #           the word vector list
-    
-#     # wordVectors -- word vectors (each row) for all tokens
-#     # sentence -- a list of words in the sentence of interest
+# print "The max_email_length is %d" % max_email_length
+# print "example email: "
+# print emails[1]
 
-#     # Output:
-#     # - sentVector: feature vector for the sentence
-#     sentVector = np.zeros((wordVectors.shape[1],))
+# Randomly shuffle data
+# np.random.seed(10)
+# shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
+# emails_shuffled = emails[shuffle_indices]
+# labels_shuffled = labels[shuffle_indices]
 
-#     indices = []
-#     for word in sentence:
-#         if tokens.get(word, 0) == 0:
-#             print "this word %s does not appear in tokens dictionary" % word
-#         else:
-#             indices.append(tokens[word])
+# train = 0.9
+# dev = 0.1
+# x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
 
-#     sentVector = np.mean(wordVectors[indices, :], axis=0)
+# Thread level
+threads, thread_labels = load_data_and_labels_thread("thread_content.npy", "thread_labels.npy")
+threads = np.array(threads)
+print "The number of e-mails is %d" % len(threads)
 
-#     assert sentVector.shape == (wordVectors.shape[1],)
-#     return sentVector
+max_thread_length = max([len(thread.split(" ")) for thread in threads])
+vocab_processor = learn.preprocessing.VocabularyProcessor(max_thread_length)
+threads = np.array(list(vocab_processor.fit_transform(threads)))
 
-# Load data
-emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
-emails = np.array(emails)
-print "The number of e-mails is %d" % len(emails)
-
-max_email_length = max([len(email.split(" ")) for email in emails])
-vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
-emails = np.array(list(vocab_processor.fit_transform(emails)))
-
-print "The max_email_length is %d" % max_email_length
-print "example email: "
-print emails[1]
-
-# dataset = StanfordSentiment()
-# tokens = dataset.tokens()
-# nWords = len(tokens)
-
-# Initialize word vectors with glove.
-# wordVectors = glove.loadWordVectors(tokens)
-# print "The shape of embedding matrix is: "
-# print wordVectors.shape  # Should be number of e-mails, number of embeddings
-
-# nTrain = len(emails)
-# trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))
-# toRemove = []
-# for i in xrange(nTrain):
-#     words = emails[i]
-#     sentenceFeatures = getSentenceFeatures(tokens, wordVectors, words)
-#     if sentenceFeatures is None:
-#         toRemove.append(i)
-#     else:
-#         trainFeatures[i, :] = sentenceFeatures
-# labels = np.delete(labels, toRemove, axis = 0)
+print "The max_thread_length is %d" % max_thread_length
+print "example thread: "
+print threads[1]
 
 # Randomly shuffle data
 np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
-emails_shuffled = emails[shuffle_indices]
-labels_shuffled = labels[shuffle_indices]
+shuffle_indices = np.random.permutation(np.arange(len(thread_labels)))  # Array of random numbers from 1 to # of labels.
+threads_shuffled = threads[shuffle_indices]
+thread_labels_shuffled = thread_labels[shuffle_indices]
 
 train = 0.9
 dev = 0.1
-x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
-
-# # Prepare test set features
-# nTest = len(x_test)
-# testFeatures = np.zeros((nTest, FLAGS.embedding_dim))
-# testLabels = y_test
-# for i in xrange(nTest):
-#     words = x_test[i]
-#     testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
+x_train, x_test, y_train, y_test = train_test_split(threads_shuffled, thread_labels_shuffled, test_size=0.3, random_state=42)
 
 # Training
 with tf.Graph().as_default():
@@ -267,5 +230,3 @@ with tf.Graph().as_default():
         if current_step % FLAGS.checkpoint_every == 0:
             path = saver.save(sess, checkpoint_prefix, global_step=current_step)
             print("Saved model checkpoint to {}\n".format(path))
-
-
