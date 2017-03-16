@@ -131,6 +131,15 @@ def load_data_and_labels_bow(email_contents_file, labels_file):
     # y contains an array of labels for all examples
     return [x_text, labels]
 
+def load_data_and_labels_thread(thread_content_file, thread_labels):
+  thread_content = np.load(thread_content_file)
+  thread_content = [clean_str(emails.strip()) for emails in thread_content]  # Split by words and clean with regex
+  thread_labels = np.array(np.load(thread_labels))
+  thread_labels = [[1, 0] if a == 0 else [0, 1] for a in thread_labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
+  thread_labels = np.array(thread_labels)
+
+  return [thread_content, thread_labels]
+
 def load_data_and_labels(email_contents_file, labels_file):
     """
     Splits the data into words and generates labels.
@@ -235,7 +244,6 @@ def main():
     readJson('enron_database/emails_fixed.json')
     readJson('enron_database/entities_fixed.json')
     readJson('enron_database/threads_fixed.json')
-
 
 if __name__ == "__main__":
     main()
