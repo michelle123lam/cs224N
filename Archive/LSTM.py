@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from sklearn import metrics
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
+from nltk import tokenize
 np.set_printoptions(threshold=np.inf)
 
 # ==================================================
@@ -26,6 +27,9 @@ tf.flags.DEFINE_boolean("get_stats", False, "Get stats on input data (default: F
 tf.flags.DEFINE_boolean("use_grouped", False, "Enable/disable grouped (sender, recipient) features (default: False)")
 tf.flags.DEFINE_boolean("use_word_embeddings", False, "Enable/disable the word embedding (default: False)")
 tf.flags.DEFINE_boolean("use_sentence_vec", False, "Enable/disable sentence vector representation (default: False)")
+tf.flags.DEFINE_boolean("use_non_lexical", False, "Enable/disable additional non-lexical features (default: False)")
+tf.flags.DEFINE_integer("num_non_lexical", 2, "Number of additional non-lexical features (default: 2)")
+
 
 # Model parameters
 tf.flags.DEFINE_boolean("use_dropout", False, "Enable/disable dropout (default: False)")
@@ -87,46 +91,78 @@ def plotAccuracyVsTime(num_epochs, train_metrics, test_metrics, filename, y_var_
   plt.ylabel(y_var_name)
   plt.ylim(ymin=0)
   plt.legend(['train', 'test'], loc='upper left')
-  plt.savefig(filename)
+  dir = './lstm_logs/plots/'
+  plt.savefig(dir + filename)
 
 
-def getSentenceFeatures(tokens, wordVectors, sentence, max_email_length, isTest=False):
+def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=False):
     """
-    Implement computation for the sentence features given a sentence.
+    Finds word-level features given an email
     Inputs:
     - tokens -- a dictionary that maps words to their indices in
               the word vector list
     - wordVectors -- word vectors (each row) for all tokens
-    - sentence -- a list of words in the sentence of interest
+    - email -- a list of words in the email of interest
     Output:
-    - sentVector: feature vector for the sentence; (n_words, word_vec_dims) size
+    - result: feature vector for the email; (n_words, word_vec_dims) size
     """
     result = np.zeros((max_email_length, wordVectors.shape[1],))
-    sentVector = [wordVectors[tokens[word]] for word in sentence if tokens.get(word, 0) != 0]
-    sentVector = np.array(sentVector)
+    emailVector = [wordVectors[tokens[word]] for word in email if tokens.get(word, 0) != 0]
+    emailVector = np.array(emailVector)
 
-    if sentVector.shape[0] > max_email_length: # trim to be size of max accepted num words
-      sentVector = sentVector[:max_email_length]
+    if emailVector.shape[0] > max_email_length: # trim to be size of max accepted num words
+      emailVector = emailVector[:max_email_length]
 
-    if sentVector.shape[0] != 0: # at least 1 matching word vector
-      result[:sentVector.shape[0], :sentVector.shape[1]] = sentVector
+    if emailVector.shape[0] != 0: # at least 1 matching word vector
+      result[:emailVector.shape[0], :emailVector.shape[1]] = emailVector
 
-    # Update length of current feature
+
+    if FLAGS.use_sentence_vec:
+      return result
+
+    # Update length of current feature (for word-level features)
     if isTest:
-      testFeature_lens.append(sentVector.shape[0])
+      testFeature_lens.append(emailVector.shape[0])
     else:
-      trainFeature_lens.append(sentVector.shape[0])
-
-    # TEMP:
-    # print "sentVector.shape[0]", sentVector.shape[0]
-    # if isTest:
-    #   print "testFeature_lens[-1]", testFeature_lens[-1]
-    #   print "len(testFeature_lens)", len(testFeature_lens)
-    # else:
-    #   print "trainFeature_lens[-1]", trainFeature_lens[-1]
-    #   print "len(trainFeature_lens)", len(trainFeature_lens)
-    # print ""
+      trainFeature_lens.append(emailVector.shape[0])
     return result
+
+
+def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, isTest=False):
+    """
+    Finds sentence vectors by concatenating the word vectors for the first [max_sentence_length] words in each sentence
+    Then sums all sentence vectors for each email
+    Output:
+    - result: feature vector for the email; (n_words, word_vec_dims) size
+    """
+    result = np.zeros((max_email_length, wordVectors.shape[1],))
+    sentences = tokenize.sent_tokenize(email)
+    # print "len(sentences):", len(sentences)
+
+    # Gets list of word vectors for each sentence
+    sentenceFeatures = [getWordVectorFeatures(tokens, wordVectors, sentences[i], max_sentence_length, isTest=isTest) for i in range(len(sentences))]
+    sentenceFeatures = np.array(sentenceFeatures)
+    # print "sentenceFeatures.shape", sentenceFeatures.shape
+
+    # Concatenate word vectors for each sentence and sum all sentence vectors
+    #(n_sentences, n_words, word_vec_dims)
+    sentenceFeatures = np.sum(sentenceFeatures, axis=0)
+
+    # print "result.shape:", result.shape
+
+    # Update length of current feature (for word-level features)
+    # TODO: update to reflect variations in sentence length
+    if sentenceFeatures.shape == ():
+      max_sentence_length = 0
+
+    if isTest:
+      testFeature_lens.append(max_sentence_length)
+    else:
+      trainFeature_lens.append(max_sentence_length)
+
+    if sentenceFeatures.shape == ():
+      return result
+    return sentenceFeatures
 
 
 # ==================================================
@@ -144,13 +180,10 @@ else:
   email_contents_file = "email_contents.npy"
   labels_file = "labels.npy"
 
-# if FLAGS.use_sentence_vec:
-#   # ==================================================
-#   # Processing for sentence vectors
-#   # max_email_length = FLAGS.max_email_length
-#   # print "The max words in sentence is %d" % max_email_length
+# Load non-lexical features
+if FLAGS.use_non_lexical:
+  num_recipients_features = np.array(np.load("num_recipients_features.npy"))
 
-# elif FLAGS.use_word_embeddings:
 if FLAGS.use_word_embeddings:
   # ==================================================
   # Processing for concatenated word vector features
@@ -181,7 +214,10 @@ if FLAGS.use_word_embeddings:
   print "emails shape:", emails.shape
 
   max_email_length = FLAGS.max_email_length
-  print "The max_email_length is %d" % max_email_length
+  if FLAGS.use_sentence_vec:
+    print "The max words in sentence is %d" % max_email_length
+  else:
+    print "The max_email_length is %d" % max_email_length
 
   dataset = StanfordSentiment()
   tokens = dataset.tokens()
@@ -198,8 +234,56 @@ if FLAGS.use_word_embeddings:
 
   # Load train set and initialize with glove vectors.
   nTrain = len(x_train)
+
+  trainFeatures = np.zeros((nTrain, embedding_dim + FLAGS.num_non_lexical)) #5 is the number of slots the extra features take up
+  toRemove = []
+  for i in xrange(nTrain):
+    words = x_train[i]
+
+    if FLAGS.use_non_lexical:
+      # Calculate num_words feature
+      num_words = len(words)
+      # Place number of words in buckets
+      if num_words < 10:
+          num_words_bucket = 0
+      elif num_words >= 10 and num_words < 100:
+          num_words_bucket = 1
+      elif num_words >= 100 and num_words < 500:
+          num_words_buckets = 2
+      elif num_words >= 500 and num_words < 1000:
+          num_words_buckets = 3
+      elif num_words >= 1000 and num_words < 2000:
+          num_words_buckets = 4
+      elif num_words >= 2000:
+          num_words_buckets = 5
+
+    if FLAGS.use_sentence_vec:
+      sentenceFeatures = getSentenceVectorFeatures(tokens, wordVectors, words, max_email_length)
+    else:
+      sentenceFeatures = getWordVectorFeatures(tokens, wordVectors, words, max_email_length)
+
+    if sentenceFeatures is None:
+      toRemove.append(i)
+    else:
+      if FLAGS.use_non_lexical:
+        # Add on num_recipients, num_words features
+        featureVector = np.hstack((sentenceFeatures, num_recipients_features[i]))
+        featureVector = np.hstack((featureVector, num_words_bucket))
+        trainFeatures[i, :] = featureVector
+
+  y = np.delete(y, toRemove, axis=0)
+  trainFeatures = np.delete(trainFeatures, toRemove, axis=0)
+
+
+
+
+
   trainFeature_lens = []
-  trainFeatures = [getSentenceFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+  trainFeatures = []
+  if FLAGS.use_sentence_vec:
+    trainFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+  else:
+    trainFeatures = [getWordVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
   trainFeatures = np.array(trainFeatures)
   trainLabels = y_train
   print "Completed trainFeatures!"
@@ -210,7 +294,11 @@ if FLAGS.use_word_embeddings:
   # Prepare test set features
   nTest = len(x_test)
   testFeature_lens = []
-  testFeatures = [getSentenceFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+  testFeatures = []
+  if FLAGS.use_sentence_vec:
+    testFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+  else:
+    testFeatures = [getWordVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
   testFeatures = np.array(testFeatures)
   testLabels = y_test
   print "Completed testFeatures!"
@@ -302,26 +390,40 @@ print "weight", weight.get_shape()
 print "bias", bias.get_shape()
 print "prediction", prediction.get_shape()
 
-cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=target))
-optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
-minimize = optimizer.minimize(cross_entropy)
+with tf.name_scope('cross_entropy'):
+  cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=target))
+  optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
+  minimize = optimizer.minimize(cross_entropy)
+tf.summary.scalar('cross-entropy', cross_entropy)
 
 # Evaluate model
-y_p = tf.argmax(prediction, 1)
-y_t = tf.argmax(target, 1)
-correct_pred = tf.equal(y_t, y_p)
-accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+with tf.name_scope('accuracy'):
+  y_p = tf.argmax(prediction, 1)
+  y_t = tf.argmax(target, 1)
+  with tf.name_scope('correct_pred'):
+    correct_pred = tf.equal(y_t, y_p)
+  with tf.name_scope('accuracy'):
+    accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+tf.summary.scalar('accuracy', accuracy)
+
+# summ_train= tf.summary.merge_all('train')
+# summ_test = tf.summary.merge_all('test')
+summ_merged = tf.summary.merge_all()
 
 # Execution of the graph
 init_op = tf.global_variables_initializer()
 sess = tf.Session()
+# Generate summary data
+writer_train = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/train', sess.graph)
+writer_test = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/test', sess.graph)
 sess.run(init_op)
+
 
 
 # ==================================================
 # RUN LSTM EPOCHS
 
-no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE)
+no_of_batches = int(NUM_EXAMPLES/BATCH_SIZE) # num batches in one epoch
 n_epochs = FLAGS.num_epochs
 
 train_accuracies = []
@@ -341,13 +443,15 @@ for i in range(n_epochs):
         x_lens = trainFeature_lens[ptr:ptr+BATCH_SIZE]
         feed_dict[X_lengths] = x_lens
       ptr+=BATCH_SIZE
-      sess.run(minimize, feed_dict)
+      s_train, _ = sess.run([summ_merged, minimize], feed_dict)
+      writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard1
       if j % no_of_batches == 0:
         # Calculate batch accuracy and loss
-        acc, loss = sess.run([accuracy, cross_entropy], feed_dict)
+        acc, loss, s_train = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
         train_accuracies.append(acc)
         train_losses.append(loss)
-        print "Iter " + str(i*BATCH_SIZE) + ", Minibatch Loss= " + \
+        writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard2
+        print "Iter " + str(i*no_of_batches) + ", Minibatch Loss= " + \
           "{:.6f}".format(loss) + ", Training Accuracy= " + \
           "{:.5f}".format(acc)
 
@@ -358,9 +462,10 @@ for i in range(n_epochs):
         }
         if FLAGS.use_word_embeddings:
           feed_dict[X_lengths] = testFeature_lens
-        acc, loss = sess.run([accuracy, cross_entropy], feed_dict)
+        acc, loss, s_test = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
         test_accuracies.append(acc)
         test_losses.append(loss)
+        writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
         print "Testing Loss= " + "{:.6f}".format(loss) + \
               ", Testing Accuracy= " + "{:.5f}".format(acc)
 
@@ -372,7 +477,8 @@ feed_dict = {
 }
 if FLAGS.use_word_embeddings:
   feed_dict[X_lengths] = testFeature_lens
-acc, loss, y_pred, y_target = sess.run([accuracy, cross_entropy, y_p, y_t], feed_dict)
+acc, loss, y_pred, y_target, s_test = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged], feed_dict)
+writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
 print "Testing Loss= " + "{:.6f}".format(loss) + \
       ", Testing Accuracy= " + "{:.5f}".format(acc)
 
@@ -389,7 +495,6 @@ plotAccuracyVsTime(n_epochs, train_losses, test_losses, loss_plot_name, "cross-e
 print "Precision: {}%".format(100*metrics.precision_score(y_target, y_pred, average="weighted"))
 print "Recall: {}%".format(100*metrics.recall_score(y_target, y_pred, average="weighted"))
 print "f1_score: {}%".format(100*metrics.f1_score(y_target, y_pred, average="weighted"))
-
 
 sess.close()
 

@@ -72,6 +72,7 @@ def getSentenceFeatures(tokens, wordVectors, sentence):
 def get_glove_data():
   embedding_dimension = 100
   x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
+  num_recipients_features = np.array(np.load("num_recipients_features.npy"))
 
   dataset = StanfordSentiment()
   tokens = dataset.tokens()
@@ -83,17 +84,36 @@ def get_glove_data():
   print embedded_vectors.shape  # Should be number of e-mails, number of embeddings
 
   nTrain = len(x_text)
-  trainFeatures = np.zeros((nTrain, embedding_dimension))
+  trainFeatures = np.zeros((nTrain, embedding_dimension + 2)) #5 is the number of slots the extra features take up
   toRemove = []
   for i in xrange(nTrain):
     words = x_text[i]
+    num_words = len(words)
+
+    #place number of words in buckets
+    if num_words < 10:
+        num_words_bucket = 0
+    elif num_words >= 10 and num_words < 100:
+        num_words_bucket = 1
+    elif num_words >= 100 and num_words < 500:
+        num_words_buckets = 2
+    elif num_words >= 500 and num_words < 1000:
+        num_words_buckets = 3
+    elif num_words >= 1000 and num_words < 2000:
+        num_words_buckets = 4
+    elif num_words >= 2000:
+        num_words_buckets = 5
+
     sentenceFeatures = getSentenceFeatures(tokens, embedded_vectors, words)
     if sentenceFeatures is None:
       toRemove.append(i)
     else:
-      trainFeatures[i, :] = sentenceFeatures
+      featureVector = np.hstack((sentenceFeatures, num_recipients_features[i]))
+      featureVector = np.hstack((featureVector, num_words_bucket))
+      trainFeatures[i, :] = featureVector
 
   y = np.delete(y, toRemove, axis=0)
+  trainFeatures = np.delete(trainFeatures, toRemove, axis=0)
 
   # Randomly shuffle data
   np.random.seed(10)
@@ -144,7 +164,7 @@ def main():
 
     # Layer's sizes
     x_size = train_X.shape[1]
-    h_size = 50
+    h_size = 100
 
     y_size = train_y.shape[1]
 
@@ -165,7 +185,7 @@ def main():
 
     # Backward propagation
     cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=yhat))
-    updates = tf.train.GradientDescentOptimizer(0.01).minimize(cost)
+    updates = tf.train.GradientDescentOptimizer(0.005).minimize(cost)
 
     # Run SGD
     sess = tf.Session()

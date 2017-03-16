@@ -353,25 +353,19 @@ def load_select_feature_maps():
   gender_map = {}
   employee_type_map = {}
   num_nonclassified = 0
+
   with open("Columbia_Enron_FirstName_Gender_Type.csv") as file:
     d_reader = csv.reader(file, delimiter = ",")
+    rows_read = 0
     for row in d_reader:
-      uid = row[0]
-      gender = row[5]
-      if gender == "FALSE":
-        break
-      if gender == "-1":
-        num_nonclassified += 1
-      gender_map[uid] = gender
-      employee_type = row[4]
-      if employee_type == "NonEnron":
-        employee_type_map[uid] = 0
-      elif employee_type == "NonCore":
-        employee_type_map[uid] = 1
-      elif employee_type == "Core":
-        employee_type_map[uid] = 2
-  print "The number of non-classified employees is " + str(num_nonclassified)
-  return gender_map, employee_type_map
+      if rows_read != 0:
+        uid = row[0]
+        gender = row[5]
+        if gender == "FALSE":
+          break
+        gender_map[uid] = gender
+      rows_read += 1
+  return gender_map
 
 # generate train and test sets
 def generate_two_split_dataset(input, labels):
@@ -447,8 +441,16 @@ def main():
         print "Finished saving email_contents and labels to files!"
 
       else:
-        labels, email_contents = get_power_labels_and_indices(d_emails)
+        labels, email_contents, num_recipients_vector, gender_feature_vector = get_power_labels_and_indices(d_emails)
         print "Finished getting power labels and indices!"
+
+        #save extra features to files
+        num_recipients_features = np.array(num_recipients_vector)
+        np.save('num_recipients_features.npy', num_recipients_features)
+        np.savetxt('num_recipients_features.txt', num_recipients_features)
+
+        gender_features = np.array(gender_feature_vector)
+        np.save('gender_features.npy', gender_features)
 
         # save email_contents and labels to files
         email_contents = np.array(email_contents)
