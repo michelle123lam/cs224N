@@ -20,10 +20,10 @@ RANDOM_SEED = 42
 tf.set_random_seed(RANDOM_SEED)
 
 
-def init_weights(shape):
+def init_weights(shape, name):
     """ Weight initialization """
     weights = tf.random_normal(shape, stddev=0.1)
-    return tf.Variable(weights)
+    return tf.Variable(weights, name=name)
 
 def forwardprop(X, w_1, w_2, b_1, b_2):
     """
@@ -31,6 +31,7 @@ def forwardprop(X, w_1, w_2, b_1, b_2):
     IMPORTANT: yhat is not softmax since TensorFlow's softmax_cross_entropy_with_logits() does that internally.
     """
     h = tf.nn.sigmoid(tf.matmul(X, w_1) + b_1)
+    tf.summary.histogram("softmaxLayer1", h)
     yhat = tf.matmul(h, w_2) + b_2
     return yhat
 
@@ -96,13 +97,13 @@ def get_glove_data():
     elif num_words >= 10 and num_words < 100:
         num_words_bucket = 1
     elif num_words >= 100 and num_words < 500:
-        num_words_buckets = 2
+        num_words_bucket = 2
     elif num_words >= 500 and num_words < 1000:
-        num_words_buckets = 3
+        num_words_bucket = 3
     elif num_words >= 1000 and num_words < 2000:
-        num_words_buckets = 4
+        num_words_bucket = 4
     elif num_words >= 2000:
-        num_words_buckets = 5
+        num_words_bucket = 5
 
     sentenceFeatures = getSentenceFeatures(tokens, embedded_vectors, words)
     if sentenceFeatures is None:
@@ -160,52 +161,69 @@ def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
   plt.savefig(filename)
 
 def main():
-    train_X, test_X, train_y, test_y = get_glove_data()
+    train_X, test_X, train_y, test_y = get_count_data()
 
     # Layer's sizes
     x_size = train_X.shape[1]
     h_size = 100
-
     y_size = train_y.shape[1]
 
     # Symbols
-    X = tf.placeholder("float", shape=[None, x_size])
-    y = tf.placeholder("float", shape=[None, y_size])
+    X = tf.placeholder("float", shape=[None, x_size], name="X")
+    y = tf.placeholder("float", shape=[None, y_size], name="Y")
 
     # Weight initializations
-    w_1 = init_weights((x_size, h_size))
-    w_2 = init_weights((h_size, y_size))
+    w_1 = init_weights((x_size, h_size), "W1")
+    w_2 = init_weights((h_size, y_size), "W2")
 
-    b_1 = tf.Variable(tf.zeros([h_size]))
-    b_2 = tf.Variable(tf.zeros([y_size]))
+    b_1 = tf.Variable(tf.zeros([h_size]), name="b1")
+    b_2 = tf.Variable(tf.zeros([y_size]), name="b2")
+
+    tf.summary.histogram("W1_summ", w_1)
+    tf.summary.histogram("W2_summ", w_2)
+    tf.summary.histogram("b1_summ", b_1)
+    tf.summary.histogram("b2_summ", b_2)
 
     # Forward propagation
     yhat = forwardprop(X, w_1, w_2, b_1, b_2)
     predict = tf.argmax(yhat, axis=1)
 
     # Backward propagation
-    cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=yhat))
-    updates = tf.train.GradientDescentOptimizer(0.005).minimize(cost)
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=yhat))
+    updates = tf.train.GradientDescentOptimizer(0.005).minimize(loss)
+    tf.summary.scalar("cost", loss)
 
-    # Run SGD
-    sess = tf.Session()
     init = tf.global_variables_initializer()
+
+    tf.summary.scalar("train_accuracy", train_accuracy)
+    tf.summary.scalar("test_accuracy", train_accuracy)
+
+    merged = tf.summary.merge_all()
+
+    sess = tf.Session()
     sess.run(init)
+
+    train_writer = tf.summary.FileWriter("oneLayerNeural" + '/train',
+                                         sess.graph)
+    test_writer = tf.summary.FileWriter("oneLayerNeural" + '/test')
 
     train_accuracies = []
     test_accuracies = []
-    num_epochs = 30
+    num_epochs = 5
     for epoch in range(num_epochs):
         # Train with each example
         for i in range(len(train_X)):
             sess.run(updates, feed_dict={X: train_X[i: i + 1], y: train_y[i: i + 1]})
 
-        train_accuracy = np.mean(np.argmax(train_y, axis=1) ==
-                                 sess.run(predict, feed_dict={X: train_X, y: train_y}))
-        train_accuracies.append(train_accuracy)
-        test_accuracy = np.mean(np.argmax(test_y, axis=1) ==
-                                 sess.run(predict, feed_dict={X: test_X, y: test_y}))
-        test_accuracies.append(test_accuracy)
+        with tf.name_scope("train_accuracy"):
+            train_accuracy = np.mean(np.argmax(train_y, axis=1) ==
+                                     sess.run(predict, feed_dict={X: train_X, y: train_y}))
+            train_accuracies.append(train_accuracy)
+
+        with tf.name_scope("test_accuracy"):
+            test_accuracy = np.mean(np.argmax(test_y, axis=1) ==
+                                     sess.run(predict, feed_dict={X: test_X, y: test_y}))
+            test_accuracies.append(test_accuracy)
 
         print("Epoch = %d, train accuracy = %.2f%%, test accuracy = %.2f%%"
               % (epoch + 1, 100. * train_accuracy, 100. * test_accuracy))
