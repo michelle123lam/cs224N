@@ -1,6 +1,7 @@
 # Creates feature vectors from Enron Organizational Hierarchy json data
 # CS 224N Winter 2017
 
+import nltk
 import json
 import argparse
 import string
@@ -12,9 +13,9 @@ from sklearn.model_selection import train_test_split
 from random import shuffle
 import numpy as np
 
+# Constants and global variables
 CONST_NUM_EMAILS = 276279
 CONST_NUM_THREADS = 36196
-
 emails_map = {}  # Map from email u_id to the email content
 
 def get_power_labels_and_indices_thread(d_threads, d_emails):
@@ -400,22 +401,21 @@ def main():
 
   # Generates power labels and indices per thread
   if args.is_thread:
-    with open('./threads_fixed.json') as file:
-      d_threads = json.load(file)
     with open('./emails_fixed.json') as file:
       d_emails = json.load(file)
+    with open('./threads_fixed.json') as file:
+      d_threads = json.load(file)
+    thread_labels, thread_content = get_power_labels_and_indices_thread(d_threads, d_emails)
+    print "Finished getting power labels and indices for thread."
 
-      thread_labels, thread_content = get_power_labels_and_indices_thread(d_threads, d_emails)
-      print "Finished getting power labels and indices for thread."
+    # Save thread contents
+    thread_content = np.array(thread_content)
+    np.save("thread_content.npy", thread_content)
+    with open('thread_content.txt','wb') as f:
+        np.savetxt(f, thread_content, delimiter='\n', fmt="%s")
 
-      # Save thread contents
-      thread_content = np.array(thread_content)
-      np.save("thread_content.npy", thread_content)
-      with open('thread_content.txt','wb') as f:
-          np.savetxt(f, thread_content, delimiter='\n', fmt="%s")
-
-      np.save("thread_labels.npy", thread_labels)
-      np.savetxt("thread_labels.txt", thread_labels)
+    np.save("thread_labels.npy", thread_labels)
+    np.savetxt("thread_labels.txt", thread_labels)
 
    # Produces bag-of-words features
   if args.is_bow:
