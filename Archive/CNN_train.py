@@ -13,6 +13,11 @@ from processData import batch_iter, load_data_and_labels, load_data_and_labels_t
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
 import yaml
+import nltk
+nltk.download('punkt')
+nltk.download('maxent_ne_chunker')
+nltk.download('words')
+nltk.download('averaged_perceptron_tagger')
 
 # Parameters
 # ==================================================
@@ -50,11 +55,48 @@ if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not Non
 else:
     embedding_dimension = FLAGS.embedding_dim
 
+def extract_entity_names(t):
+  entity_names = []
+
+  if hasattr(t, 'label') and t.label:
+      if t.label() == 'NE':
+          entity_names.append(' '.join([child[0] for child in t]))
+      else:
+          for child in t:
+              entity_names.extend(extract_entity_names(child))
+
+  return entity_names
+
+def get_entity_names(d_emails):
+  chunked_emails = []
+  entity_names = []
+
+  for email in d_emails:
+    email = nltk.sent_tokenize(email)
+    tokenized_sentences = [nltk.word_tokenize(sentence) for sentence in email]
+    tagged_sentences = [nltk.pos_tag(sentence) for sentence in tokenized_sentences]
+    chunked_emails.extend(nltk.ne_chunk_sents(tagged_sentences, binary=True))
+
+  for tree in chunked_emails:
+    entity_names.extend(extract_entity_names(tree))
+
+  return entity_names
+
 # Email level
 def load_emails():
     emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
+    print "finished loading e-mails"
     emails = np.array(emails)
+
+    print "getting entity names"
+    entity_names = get_entity_names(emails)
+    print "entity names are"
+    print entity_names
+
     print "The number of e-mails is %d" % len(emails)
+
+    for entity_name in entity_names:
+        emails = [email.replace(entity_name, "BOB") for email in emails]
 
     max_email_length = max([len(email.split(" ")) for email in emails])
     vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
@@ -71,8 +113,9 @@ def load_emails():
     labels_shuffled = labels[shuffle_indices]
 
     train = 0.9
-    dev = 0.1
+    dev = 0.3
     x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
+    return x_train, x_test, y_train, y_test, vocab_processor
 
 # Thread level
 def load_threads():
@@ -95,10 +138,11 @@ def load_threads():
     thread_labels_shuffled = thread_labels[shuffle_indices]
 
     train = 0.9
-    dev = 0.1
+    dev = 0.3
     x_train, x_test, y_train, y_test = train_test_split(threads_shuffled, thread_labels_shuffled, test_size=0.3, random_state=42)
+    return x_train, x_test, y_train, y_test, vocab_processor
 
-def train_tensorflow():
+def train_tensorflow(x_train, x_test, y_train, y_test, vocab_processor):
     # Training
     with tf.Graph().as_default():
         session_conf = tf.ConfigProto(
@@ -238,11 +282,11 @@ def train_tensorflow():
 def main():
   args = process_command_line()
   if args.is_email:
-    load_emails()
-    train_tensorflow()
+    x_train, x_test, y_train, y_test, vocab_processor = load_emails()
+    train_tensorflow(x_train, x_test, y_train, y_test, vocab_processor)
   else:
-    load_threads()
-    train_tensorflow()
+    x_train, x_test, y_train, y_test, vocab_processor = load_threads()
+    train_tensorflow(x_train, x_test, y_train, y_test, vocab_processor)
 
 def process_command_line():
   """Sets command-line flags"""
