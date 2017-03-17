@@ -28,7 +28,7 @@ tf.flags.DEFINE_boolean("use_grouped", False, "Enable/disable grouped (sender, r
 tf.flags.DEFINE_boolean("use_word_embeddings", False, "Enable/disable the word embedding (default: False)")
 tf.flags.DEFINE_boolean("use_sentence_vec", False, "Enable/disable sentence vector representation (default: False)")
 tf.flags.DEFINE_boolean("use_non_lexical", False, "Enable/disable additional non-lexical features (default: False)")
-tf.flags.DEFINE_integer("num_non_lexical", 2, "Number of additional non-lexical features (default: 2)")
+tf.flags.DEFINE_integer("num_non_lexical", 0, "Number of additional non-lexical features (default: 0)")
 
 
 # Model parameters
@@ -115,6 +115,8 @@ def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=F
 
     if emailVector.shape[0] != 0: # at least 1 matching word vector
       result[:emailVector.shape[0], :emailVector.shape[1]] = emailVector
+    # else: # no matching word vector
+    #   return None
 
 
     if FLAGS.use_sentence_vec:
@@ -122,9 +124,9 @@ def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=F
 
     # Update length of current feature (for word-level features)
     if isTest:
-      testFeature_lens.append(emailVector.shape[0])
+      testFeature_lens.append(emailVector.shape[0] + FLAGS.num_non_lexical)
     else:
-      trainFeature_lens.append(emailVector.shape[0])
+      trainFeature_lens.append(emailVector.shape[0] + FLAGS.num_non_lexical)
     return result
 
 
@@ -156,9 +158,9 @@ def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, i
       max_sentence_length = 0
 
     if isTest:
-      testFeature_lens.append(max_sentence_length)
+      testFeature_lens.append(max_sentence_length + FLAGS.num_non_lexical)
     else:
-      trainFeature_lens.append(max_sentence_length)
+      trainFeature_lens.append(max_sentence_length + FLAGS.num_non_lexical)
 
     if sentenceFeatures.shape == ():
       return result
@@ -190,6 +192,41 @@ if FLAGS.use_word_embeddings:
 
   emails, labels = load_data_and_labels(email_contents_file, labels_file)
   emails = np.array(emails)
+
+  # Add on non-lexical email features
+  if FLAGS.use_non_lexical:
+    nTrain = len(emails)
+    emails_extended = np.zeros((nTrain, FLAGS.num_non_lexical + 1), dtype=object)
+    emails_extended[:, 0] = emails.T
+
+    # Get num_words_features
+    num_words_features = []
+    for i in xrange(nTrain):
+      words = emails[i]
+      # Calculate num_words feature
+      num_words = len(words)
+      # Place number of words in buckets
+      if num_words < 10:
+          num_words_bucket = 0
+      elif num_words >= 10 and num_words < 100:
+          num_words_bucket = 1
+      elif num_words >= 100 and num_words < 500:
+          num_words_bucket = 2
+      elif num_words >= 500 and num_words < 1000:
+          num_words_bucket = 3
+      elif num_words >= 1000 and num_words < 2000:
+          num_words_bucket = 4
+      elif num_words >= 2000:
+          num_words_bucket = 5
+      num_words_features.append(num_words_bucket)
+    num_words_features = np.array(num_words_features)
+    # emails = np.concatenate((emails, num_words_features.T), axis=0)
+    emails_extended[:, 1] = num_words_features.T
+
+    # Get num_recipients_features
+    # emails = np.concatenate((emails, num_recipients_features.T), axis=0)
+    emails_extended[:, 2] = num_recipients_features.T
+    emails = emails_extended
 
   # Randomly shuffle data
   np.random.seed(10)
@@ -232,59 +269,28 @@ if FLAGS.use_word_embeddings:
   if FLAGS.get_stats:
     getDataStats(emails, tokens, wordVectors)
 
+
   # Load train set and initialize with glove vectors.
   nTrain = len(x_train)
-
-  trainFeatures = np.zeros((nTrain, embedding_dim + FLAGS.num_non_lexical)) #5 is the number of slots the extra features take up
-  toRemove = []
-  for i in xrange(nTrain):
-    words = x_train[i]
-
-    if FLAGS.use_non_lexical:
-      # Calculate num_words feature
-      num_words = len(words)
-      # Place number of words in buckets
-      if num_words < 10:
-          num_words_bucket = 0
-      elif num_words >= 10 and num_words < 100:
-          num_words_bucket = 1
-      elif num_words >= 100 and num_words < 500:
-          num_words_buckets = 2
-      elif num_words >= 500 and num_words < 1000:
-          num_words_buckets = 3
-      elif num_words >= 1000 and num_words < 2000:
-          num_words_buckets = 4
-      elif num_words >= 2000:
-          num_words_buckets = 5
-
-    if FLAGS.use_sentence_vec:
-      sentenceFeatures = getSentenceVectorFeatures(tokens, wordVectors, words, max_email_length)
-    else:
-      sentenceFeatures = getWordVectorFeatures(tokens, wordVectors, words, max_email_length)
-
-    if sentenceFeatures is None:
-      toRemove.append(i)
-    else:
-      if FLAGS.use_non_lexical:
-        # Add on num_recipients, num_words features
-        featureVector = np.hstack((sentenceFeatures, num_recipients_features[i]))
-        featureVector = np.hstack((featureVector, num_words_bucket))
-        trainFeatures[i, :] = featureVector
-
-  y = np.delete(y, toRemove, axis=0)
-  trainFeatures = np.delete(trainFeatures, toRemove, axis=0)
-
-
-
-
-
   trainFeature_lens = []
   trainFeatures = []
   if FLAGS.use_sentence_vec:
-    trainFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+    # (n_emails, n_words, n_word_vec_dims)
+    trainFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_train[i][0], max_email_length) for i in xrange(nTrain)]
   else:
-    trainFeatures = [getWordVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
+    # (n_emails, n_words, n_word_vec_dims)
+    trainFeatures = [getWordVectorFeatures(tokens, wordVectors, x_train[i][0], max_email_length) for i in xrange(nTrain)]
   trainFeatures = np.array(trainFeatures)
+  if FLAGS.use_non_lexical:
+    # (n_emails, num_non_lexical, n_word_vec_dims)
+    non_lexical_feats = np.zeros((nTrain, FLAGS.num_non_lexical, embedding_dim))
+    x_train_feats = x_train[:, 1:]
+    print "x_train_feats", x_train_feats.shape
+    non_lexical_feats[:, :, 0] = x_train_feats.astype(int)
+    # non_lexical_feats += x_train_feats.astype(int)
+    # non_lexical_feats[:, 0, :] = x_train[:][1]
+    # non_lexical_feats[:, 1, :] = x_train[:][2]
+    trainFeatures = np.concatenate((trainFeatures, non_lexical_feats), axis=1)
   trainLabels = y_train
   print "Completed trainFeatures!"
   print "trainFeatures", trainFeatures.shape
@@ -296,10 +302,20 @@ if FLAGS.use_word_embeddings:
   testFeature_lens = []
   testFeatures = []
   if FLAGS.use_sentence_vec:
-    testFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+    testFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_test[i][0], max_email_length, isTest=True) for i in xrange(nTest)]
   else:
-    testFeatures = [getWordVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
+    testFeatures = [getWordVectorFeatures(tokens, wordVectors, x_test[i][0], max_email_length, isTest=True) for i in xrange(nTest)]
   testFeatures = np.array(testFeatures)
+  if FLAGS.use_non_lexical:
+    # (n_emails, num_non_lexical, n_word_vec_dims)
+    non_lexical_feats = np.zeros((nTest, FLAGS.num_non_lexical, embedding_dim))
+    x_test_feats = x_test[:, 1:]
+    print "x_test_feats", x_test_feats.shape
+    non_lexical_feats[:, :, 0] = x_test_feats.astype(int)
+    # non_lexical_feats += x_test_feats.astype(int)
+    # non_lexical_feats[:, 0, :] = x_test[:][1]
+    # non_lexical_feats[:, 1, :] = x_test[:][2]
+    testFeatures = np.concatenate((testFeatures, non_lexical_feats), axis=1)
   testLabels = y_test
   print "Completed testFeatures!"
   print "testFeatures", testFeatures.shape
@@ -360,7 +376,7 @@ N_CLASSES = 2
 BATCH_SIZE = FLAGS.batch_size
 
 if FLAGS.use_word_embeddings:
-  N_TIMESTEPS = max_email_length
+  N_TIMESTEPS = max_email_length + FLAGS.num_non_lexical
 else:
   N_TIMESTEPS = 1
 
