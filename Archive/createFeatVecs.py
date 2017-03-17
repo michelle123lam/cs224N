@@ -251,6 +251,7 @@ def get_power_labels_and_indices(d_emails):
         # get gender feature
         sender_recipient_tuple = [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]
         gender_feature_vector.append(sender_recipient_tuple)
+        break
 
       elif (int(recipients[j]), int(sender)) in dominance_map:
         email_contents.append(content) # Add email contents to list
@@ -263,10 +264,12 @@ def get_power_labels_and_indices(d_emails):
         # get gender feature
         sender_recipient_tuple = [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]
         gender_feature_vector.append(sender_recipient_tuple)
+        break
 
-  #print("Dominant-Subordinates: " + str(dom_sub))
-  #print("Subordinate-Dominants: " + str(sub_dom))
-  print("Totals: " + str(len(labels)))
+  print("Dominant-Subordinates: " + str(dom_sub))
+  print("Subordinate-Dominants: " + str(sub_dom))
+  print("Total labels: " + str(len(labels)))
+  print("Total emails: " + str(len(email_contents)))
 
   return labels, email_contents, num_recipients_vector, gender_feature_vector
 
@@ -419,7 +422,7 @@ def main():
 
    # Produces bag-of-words features
   if args.is_bow:
-    with open('./emails_fixed.json') as file:
+    with open('./enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
 
       if args.is_grouped:
@@ -446,22 +449,23 @@ def main():
 
         #save extra features to files
         num_recipients_features = np.array(num_recipients_vector)
-        np.save('num_recipients_features.npy', num_recipients_features)
-        np.savetxt('num_recipients_features.txt', num_recipients_features)
+        np.save('num_recipients_features_nodup.npy', num_recipients_features)
+        np.savetxt('num_recipients_features_nodup.txt', num_recipients_features)
 
         gender_features = np.array(gender_feature_vector)
-        np.save('gender_features.npy', gender_features)
+        np.save('gender_features_nodup.npy', gender_features)
 
         # save email_contents and labels to files
         email_contents = np.array(email_contents)
-        np.save('email_contents.npy', email_contents)
-        with open('email_contents.txt','wb') as f:
+        np.save('email_contents_nodup.npy', email_contents)
+        with open('email_contents_nodup.txt','wb') as f:
           np.savetxt(f, email_contents, delimiter='\n', fmt="%s")
 
-        np.save('labels.npy', labels)
-        np.savetxt('labels.txt', labels)
+        np.save('labels_nodup.npy', labels)
+        np.savetxt('labels_nodup.txt', labels)
 
         print "Finished saving email_contents and labels to files!"
+        exit(0)
 
         # transform email_contents to sparse vectors of word counts
         count_vect = CountVectorizer()
