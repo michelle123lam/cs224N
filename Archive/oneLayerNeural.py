@@ -1,38 +1,17 @@
-# Implementation of a simple MLP network with one hidden layer
+# Implementation of a simple one-layer neural network
 
-# NOTE: In order to make the code simple, we rewrite x * W_1 + b_1 = x' * W_1'
-# where x' = [x | 1] and W_1' is the matrix W_1 appended with a new row with elements b_1's.
-# Similarly, for h * W_2 + b_2
+from __future__ import print_function
+
+import time
+import datetime
+import os
 import tensorflow as tf
 from tensorflow.contrib import learn
 import numpy as np
-from sklearn import datasets
 from sklearn.model_selection import train_test_split
-from processData import load_data_and_labels, load_data_and_labels_bow, load_embedding_vectors_glove
-import matplotlib
-matplotlib.use('agg')
-import matplotlib.pyplot as plt
+from processData import load_data_and_labels, load_data_and_labels_bow, batch_iter
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
-import createFeatVecs
-
-RANDOM_SEED = 42
-tf.set_random_seed(RANDOM_SEED)
-
-
-def init_weights(shape):
-    """ Weight initialization """
-    weights = tf.random_normal(shape, stddev=0.1)
-    return tf.Variable(weights)
-
-def forwardprop(X, w_1, w_2, b_1, b_2):
-    """
-    Forward-propagation.
-    IMPORTANT: yhat is not softmax since TensorFlow's softmax_cross_entropy_with_logits() does that internally.
-    """
-    h = tf.nn.sigmoid(tf.matmul(X, w_1) + b_1)
-    yhat = tf.matmul(h, w_2) + b_2
-    return yhat
 
 def getSentenceFeatures(tokens, wordVectors, sentence):
     """
@@ -80,8 +59,8 @@ def get_glove_data():
 
   # Initialize word vectors with glove.
   embedded_vectors = glove.loadWordVectors(tokens)
-  print "The shape of embedding matrix is:"
-  print embedded_vectors.shape  # Should be number of e-mails, number of embeddings
+  print("The shape of embedding matrix is:")
+  print(embedded_vectors.shape) # Should be number of e-mails, number of embeddings
 
   nTrain = len(x_text)
   trainFeatures = np.zeros((nTrain, embedding_dimension + 2)) #5 is the number of slots the extra features take up
@@ -96,13 +75,13 @@ def get_glove_data():
     elif num_words >= 10 and num_words < 100:
         num_words_bucket = 1
     elif num_words >= 100 and num_words < 500:
-        num_words_buckets = 2
+        num_words_bucket = 2
     elif num_words >= 500 and num_words < 1000:
-        num_words_buckets = 3
+        num_words_bucket = 3
     elif num_words >= 1000 and num_words < 2000:
-        num_words_buckets = 4
+        num_words_bucket = 4
     elif num_words >= 2000:
-        num_words_buckets = 5
+        num_words_bucket = 5
 
     sentenceFeatures = getSentenceFeatures(tokens, embedded_vectors, words)
     if sentenceFeatures is None:
@@ -149,69 +128,130 @@ def get_count_data():
   dev = 0.3
   return train_test_split(x_shuffled, y_shuffled, test_size=0.3, random_state=42)
 
-def plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, filename):
-  x_values = [i + 1 for i in range(num_epochs)]
-  plt.plot(x_values, train_accuracies)
-  plt.plot(x_values, test_accuracies)
-  plt.xlabel("epoch")
-  plt.ylabel("accuracy")
-  #plt.ylim(ymin=0)
-  plt.legend(['train', 'test'], loc='upper left')
-  plt.savefig(filename)
+train_X, test_X, train_y, test_y = get_glove_data()
 
-def main():
-    train_X, test_X, train_y, test_y = get_glove_data()
+# Parameters
+RANDOM_SEED = 42
+tf.set_random_seed(RANDOM_SEED)
+learning_rate = 0.01
+training_epochs = 100
+batch_size = 500
+display_step = 1
+evaluate_every = 50
 
-    # Layer's sizes
-    x_size = train_X.shape[1]
-    h_size = 100
+# Network Parameters
+n_hidden_1 = 256 # 1st layer number of features
+n_input = train_X.shape[1] # MNIST data input (img shape: 28*28)
+n_classes = train_y.shape[1] # MNIST total classes (0-9 digits)
 
-    y_size = train_y.shape[1]
+global_step = tf.Variable(0, name="global_step", trainable=False)
+# tf Graph Input
+x = tf.placeholder(tf.float32, [None, n_input], name='X')
+# 0-9 digits recognition => 10 classes
+y = tf.placeholder(tf.float32, [None, n_classes], name='y')
 
-    # Symbols
-    X = tf.placeholder("float", shape=[None, x_size])
-    y = tf.placeholder("float", shape=[None, y_size])
+# Create model
+def perceptron(x, weights, biases):
+    # Hidden layer with RELU activation
+    layer_1 = tf.add(tf.matmul(x, weights['w1']), biases['b1'])
+    layer_1 = tf.nn.softmax(layer_1)
+    # Create a summary to visualize the first layer ReLU activation
+    tf.summary.histogram("softmax1", layer_1)
+    # Output layer
+    out_layer = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
+    return out_layer
 
-    # Weight initializations
-    w_1 = init_weights((x_size, h_size))
-    w_2 = init_weights((h_size, y_size))
+# Store layers weight & bias
+weights = {
+    'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
+    'w2': tf.Variable(tf.random_normal([n_hidden_1, n_classes]), name='W2'),
+}
+biases = {
+    'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
+    'b2': tf.Variable(tf.random_normal([n_classes]), name='b2'),
+}
 
-    b_1 = tf.Variable(tf.zeros([h_size]))
-    b_2 = tf.Variable(tf.zeros([y_size]))
+# Encapsulating all ops into scopes, making Tensorboard's Graph
+# Visualization more convenient
+pred = perceptron(x, weights, biases)
 
-    # Forward propagation
-    yhat = forwardprop(X, w_1, w_2, b_1, b_2)
-    predict = tf.argmax(yhat, axis=1)
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
 
-    # Backward propagation
-    cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=yhat))
-    updates = tf.train.GradientDescentOptimizer(0.005).minimize(cost)
+# Gradient Descent
+optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+# Op to calculate every variable gradient
+grads = tf.gradients(loss, tf.trainable_variables())
+grads = list(zip(grads, tf.trainable_variables()))
+# Op to update all variables according to their gradient
+apply_grads = optimizer.apply_gradients(grads_and_vars=grads, global_step=global_step)
 
-    # Run SGD
-    sess = tf.Session()
-    init = tf.global_variables_initializer()
+acc = tf.equal(tf.argmax(pred, axis=1), tf.argmax(y, axis=1))
+acc = tf.reduce_mean(tf.cast(acc, tf.float32))
+
+# Initializing the variables
+init = tf.global_variables_initializer()
+
+# Launch the graph
+with tf.Session() as sess:
     sess.run(init)
 
-    train_accuracies = []
-    test_accuracies = []
-    num_epochs = 30
-    for epoch in range(num_epochs):
-        # Train with each example
-        for i in range(len(train_X)):
-            sess.run(updates, feed_dict={X: train_X[i: i + 1], y: train_y[i: i + 1]})
+    # Output directory for models and summaries
+    timestamp = str(int(time.time()))
+    out_dir = os.path.abspath(os.path.join(os.path.curdir, "oneLayer_runs", timestamp))
+    print("Writing to {}\n".format(out_dir))
 
-        train_accuracy = np.mean(np.argmax(train_y, axis=1) ==
-                                 sess.run(predict, feed_dict={X: train_X, y: train_y}))
-        train_accuracies.append(train_accuracy)
-        test_accuracy = np.mean(np.argmax(test_y, axis=1) ==
-                                 sess.run(predict, feed_dict={X: test_X, y: test_y}))
-        test_accuracies.append(test_accuracy)
+    # Create a summary to monitor cost tensor
+    loss_summary = tf.summary.scalar("loss", loss)
+    # Create a summary to monitor accuracy tensor
+    acc_summary = tf.summary.scalar("accuracy", acc)
 
-        print("Epoch = %d, train accuracy = %.2f%%, test accuracy = %.2f%%"
-              % (epoch + 1, 100. * train_accuracy, 100. * test_accuracy))
+    # Summarize all gradients
+    grad_summaries = []
+    for g, v in grads:
+        if g is not None:
+            grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
+            sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+            grad_summaries.append(grad_hist_summary)
+            grad_summaries.append(sparsity_summary)
+    grad_summaries_merged = tf.summary.merge(grad_summaries)
 
-    sess.close()
-    plotAccuracyVsTime(num_epochs, train_accuracies, test_accuracies, "oneLayerNeuralPlot.png")
+    # Train Summaries
+    train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
+    train_summary_dir = os.path.join(out_dir, "summaries", "train")
+    train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
 
-if __name__ == '__main__':
-    main()
+    # # Dev summaries
+    dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
+    dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
+    dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
+
+    # Generate batches
+    train_batches = batch_iter(
+        list(zip(train_X, train_y)), batch_size, training_epochs)
+    dev_batches = batch_iter(
+        list(zip(test_X, test_y)), batch_size, training_epochs)
+
+    # Training cycle
+    for train_batch, dev_batch in zip(train_batches, dev_batches):
+        x_train_batch, y_train_batch = zip(*train_batch)
+        _, step, summaries, loss_1, accuracy = sess.run([apply_grads, global_step, train_summary_op, loss, acc],
+                                     feed_dict={x: x_train_batch, y: y_train_batch})
+        time_str = datetime.datetime.now().isoformat()
+        print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
+        train_summary_writer.add_summary(summaries, step)
+        train_summary_writer.flush()
+
+        current_step = tf.train.global_step(sess, global_step)
+        if current_step % evaluate_every == 0:
+            print("\nEvaluation:")
+            x_dev_batch, y_dev_batch = zip(*dev_batch)
+            step, summaries, loss_1, accuracy = sess.run([global_step, dev_summary_op, loss, acc],
+                                     feed_dict={x: x_dev_batch, y: y_dev_batch})
+            time_str = datetime.datetime.now().isoformat()
+            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
+            dev_summary_writer.add_summary(summaries, step)
+            dev_summary_writer.flush()
+            print("")
+
+    train_summary_writer.close()
+    dev_summary_writer.close()

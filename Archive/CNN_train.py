@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 import tensorflow as tf
+import argparse
 import numpy as np
 import os
 import time
@@ -8,7 +9,7 @@ import datetime
 from text_cnn import TextCNN
 from tensorflow.contrib import learn
 from sklearn.model_selection import train_test_split
-from processData import batch_iter, load_data_and_labels, load_embedding_vectors_word2vec, load_embedding_vectors_glove
+from processData import batch_iter, load_data_and_labels, load_data_and_labels_thread, load_embedding_vectors_word2vec, load_embedding_vectors_glove
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
 import yaml
@@ -49,205 +50,171 @@ if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not Non
 else:
     embedding_dimension = FLAGS.embedding_dim
 
-# def getSentenceFeatures(tokens, wordVectors, sentence):
-#     """
-#     Obtain the sentence feature for sentiment analysis by averaging its
-#     word vectors
-#     """
+# Email level
+def load_emails():
+    emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
+    emails = np.array(emails)
+    print "The number of e-mails is %d" % len(emails)
 
-#     # Implement computation for the sentence features given a sentence.
+    max_email_length = max([len(email.split(" ")) for email in emails])
+    vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
+    emails = np.array(list(vocab_processor.fit_transform(emails)))
 
-#     # Inputs:
-#     # tokens -- a dictionary that maps words to their indices in
-#     #           the word vector list
-    
-#     # wordVectors -- word vectors (each row) for all tokens
-#     # sentence -- a list of words in the sentence of interest
+    print "The max_email_length is %d" % max_email_length
+    print "example email: "
+    print emails[1]
 
-#     # Output:
-#     # - sentVector: feature vector for the sentence
-#     sentVector = np.zeros((wordVectors.shape[1],))
+    # Randomly shuffle data
+    np.random.seed(10)
+    shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
+    emails_shuffled = emails[shuffle_indices]
+    labels_shuffled = labels[shuffle_indices]
 
-#     indices = []
-#     for word in sentence:
-#         if tokens.get(word, 0) == 0:
-#             print "this word %s does not appear in tokens dictionary" % word
-#         else:
-#             indices.append(tokens[word])
+    train = 0.9
+    dev = 0.1
+    x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
 
-#     sentVector = np.mean(wordVectors[indices, :], axis=0)
+# Thread level
+def load_threads():
+    threads, thread_labels = load_data_and_labels_thread("thread_content.npy", "thread_labels.npy")
+    threads = np.array(threads)
+    print "The number of e-mails is %d" % len(threads)
 
-#     assert sentVector.shape == (wordVectors.shape[1],)
-#     return sentVector
+    max_thread_length = max([len(thread.split(" ")) for thread in threads])
+    vocab_processor = learn.preprocessing.VocabularyProcessor(max_thread_length)
+    threads = np.array(list(vocab_processor.fit_transform(threads)))
 
-# Load data
-emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
-emails = np.array(emails)
-print "The number of e-mails is %d" % len(emails)
+    print "The max_thread_length is %d" % max_thread_length
+    print "example thread: "
+    print threads[1]
 
-max_email_length = max([len(email.split(" ")) for email in emails])
-vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
-emails = np.array(list(vocab_processor.fit_transform(emails)))
+    # Randomly shuffle data
+    np.random.seed(10)
+    shuffle_indices = np.random.permutation(np.arange(len(thread_labels)))  # Array of random numbers from 1 to # of labels.
+    threads_shuffled = threads[shuffle_indices]
+    thread_labels_shuffled = thread_labels[shuffle_indices]
 
-print "The max_email_length is %d" % max_email_length
-print "example email: "
-print emails[1]
+    train = 0.9
+    dev = 0.1
+    x_train, x_test, y_train, y_test = train_test_split(threads_shuffled, thread_labels_shuffled, test_size=0.3, random_state=42)
 
-# dataset = StanfordSentiment()
-# tokens = dataset.tokens()
-# nWords = len(tokens)
+def train_tensorflow():
+    # Training
+    with tf.Graph().as_default():
+        session_conf = tf.ConfigProto(
+          allow_soft_placement=FLAGS.allow_soft_placement,
+          log_device_placement=FLAGS.log_device_placement)
+        sess = tf.Session(config=session_conf)
+        with sess.as_default():
+            cnn = TextCNN(
+                sequence_length=x_train.shape[1],
+                num_classes=2,
+                vocab_size=len(vocab_processor.vocabulary_),
+                embedding_size=FLAGS.embedding_dim,
+                filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
+                num_filters=FLAGS.num_filters,
+                l2_reg_lambda=FLAGS.l2_reg_lambda)
 
-# Initialize word vectors with glove.
-# wordVectors = glove.loadWordVectors(tokens)
-# print "The shape of embedding matrix is: "
-# print wordVectors.shape  # Should be number of e-mails, number of embeddings
+        # Define Training procedure
+        global_step = tf.Variable(0, name="global_step", trainable=False)
+        optimizer = tf.train.AdamOptimizer(1e-3)
+        grads_and_vars = optimizer.compute_gradients(cnn.loss)
+        train_op = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
 
-# nTrain = len(emails)
-# trainFeatures = np.zeros((nTrain, FLAGS.embedding_dim))
-# toRemove = []
-# for i in xrange(nTrain):
-#     words = emails[i]
-#     sentenceFeatures = getSentenceFeatures(tokens, wordVectors, words)
-#     if sentenceFeatures is None:
-#         toRemove.append(i)
-#     else:
-#         trainFeatures[i, :] = sentenceFeatures
-# labels = np.delete(labels, toRemove, axis = 0)
+        # Keep track of gradient values and sparsity (optional)
+        grad_summaries = []
+        for g, v in grads_and_vars:
+            if g is not None:
+                grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
+                sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+                grad_summaries.append(grad_hist_summary)
+                grad_summaries.append(sparsity_summary)
+        grad_summaries_merged = tf.summary.merge(grad_summaries)
 
-# Randomly shuffle data
-np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(labels)))  # Array of random numbers from 1 to # of labels.
-emails_shuffled = emails[shuffle_indices]
-labels_shuffled = labels[shuffle_indices]
+        # Output directory for models and summaries
+        timestamp = str(int(time.time()))
+        out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
+        print("Writing to {}\n".format(out_dir))
 
-train = 0.9
-dev = 0.1
-x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
+        # Summaries for loss and accuracy
+        loss_summary = tf.summary.scalar("loss", cnn.loss)
+        acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
 
-# # Prepare test set features
-# nTest = len(x_test)
-# testFeatures = np.zeros((nTest, FLAGS.embedding_dim))
-# testLabels = y_test
-# for i in xrange(nTest):
-#     words = x_test[i]
-#     testFeatures[i, :] = getSentenceFeatures(tokens, wordVectors, words)
+        # Train Summaries
+        train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
+        train_summary_dir = os.path.join(out_dir, "summaries", "train")
+        train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
 
-# Training
-with tf.Graph().as_default():
-    session_conf = tf.ConfigProto(
-      allow_soft_placement=FLAGS.allow_soft_placement,
-      log_device_placement=FLAGS.log_device_placement)
-    sess = tf.Session(config=session_conf)
-    with sess.as_default():
-        cnn = TextCNN(
-            sequence_length=x_train.shape[1],
-            num_classes=2,
-            vocab_size=len(vocab_processor.vocabulary_),
-            embedding_size=FLAGS.embedding_dim,
-            filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
-            num_filters=FLAGS.num_filters,
-            l2_reg_lambda=FLAGS.l2_reg_lambda)
+        # Dev summaries
+        dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
+        dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
+        dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
 
-    # Define Training procedure
-    global_step = tf.Variable(0, name="global_step", trainable=False)
-    optimizer = tf.train.AdamOptimizer(1e-3)
-    grads_and_vars = optimizer.compute_gradients(cnn.loss)
-    train_op = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
+        # Checkpoint directory. Tensorflow assumes this directory already exists so we need to create it
+        checkpoint_dir = os.path.abspath(os.path.join(out_dir, "checkpoints"))
+        checkpoint_prefix = os.path.join(checkpoint_dir, "model")
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+        saver = tf.train.Saver(tf.global_variables(), max_to_keep=FLAGS.num_checkpoints)
 
-    # Keep track of gradient values and sparsity (optional)
-    grad_summaries = []
-    for g, v in grads_and_vars:
-        if g is not None:
-            grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
-            sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
-            grad_summaries.append(grad_hist_summary)
-            grad_summaries.append(sparsity_summary)
-    grad_summaries_merged = tf.summary.merge(grad_summaries)
+        # Write vocabulary
+        vocab_processor.save(os.path.join(out_dir, "vocab"))
 
-    # Output directory for models and summaries
-    timestamp = str(int(time.time()))
-    out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
-    print("Writing to {}\n".format(out_dir))
+        # Initialize all variables
+        sess.run(tf.global_variables_initializer())
 
-    # Summaries for loss and accuracy
-    loss_summary = tf.summary.scalar("loss", cnn.loss)
-    acc_summary = tf.summary.scalar("accuracy", cnn.accuracy)
+        if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
+            vocabulary = vocab_processor.vocabulary_
+            initEmbedding = None
+            if embedding_name == 'word2vec':
+                # load embedding vectors from the word2vec
+                print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
+                initEmbedding = load_embedding_vectors_word2vec(vocabulary,
+                                                                     cfg['word_embeddings']['word2vec']['path'],
+                                                                     cfg['word_embeddings']['word2vec']['binary'])
+                print("word2vec file has been loaded")
+            elif embedding_name == 'glove':
+                # load embedding vectors from the glove
+                print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
+                initEmbedding = load_embedding_vectors_glove(vocabulary,
+                                                                  cfg['word_embeddings']['glove']['path'],
+                                                                  embedding_dimension)
+                print("glove file has been loaded\n")
+                
+            sess.run(cnn.E.assign(initEmbedding))
 
-    # Train Summaries
-    train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
-    train_summary_dir = os.path.join(out_dir, "summaries", "train")
-    train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
+        def train_step(x_batch, y_batch):
+            """
+            A single training step
+            """
+            feed_dict = {
+              cnn.input_x: x_batch,
+              cnn.input_y: y_batch,
+              cnn.dropout_keep_prob: FLAGS.dropout_keep_prob
+            }
+            _, step, summaries, loss, accuracy = sess.run(
+                [train_op, global_step, train_summary_op, cnn.loss, cnn.accuracy],
+                feed_dict)
+            time_str = datetime.datetime.now().isoformat()
+            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+            train_summary_writer.add_summary(summaries, step)
 
-    # Dev summaries
-    dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
-    dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
-    dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
-
-    # Checkpoint directory. Tensorflow assumes this directory already exists so we need to create it
-    checkpoint_dir = os.path.abspath(os.path.join(out_dir, "checkpoints"))
-    checkpoint_prefix = os.path.join(checkpoint_dir, "model")
-    if not os.path.exists(checkpoint_dir):
-        os.makedirs(checkpoint_dir)
-    saver = tf.train.Saver(tf.global_variables(), max_to_keep=FLAGS.num_checkpoints)
-
-    # # Write vocabulary
-    # vocab_processor.save(os.path.join(out_dir, "vocab"))
-
-    # Initialize all variables
-    sess.run(tf.global_variables_initializer())
-
-    if FLAGS.enable_word_embeddings and cfg['word_embeddings']['default'] is not None:
-        vocabulary = vocab_processor.vocabulary_
-        initEmbedding = None
-        if embedding_name == 'word2vec':
-            # load embedding vectors from the word2vec
-            print("Load word2vec file {}".format(cfg['word_embeddings']['word2vec']['path']))
-            initEmbedding = load_embedding_vectors_word2vec(vocabulary,
-                                                                 cfg['word_embeddings']['word2vec']['path'],
-                                                                 cfg['word_embeddings']['word2vec']['binary'])
-            print("word2vec file has been loaded")
-        elif embedding_name == 'glove':
-            # load embedding vectors from the glove
-            print("Load glove file {}".format(cfg['word_embeddings']['glove']['path']))
-            initEmbedding = load_embedding_vectors_glove(vocabulary,
-                                                              cfg['word_embeddings']['glove']['path'],
-                                                              embedding_dimension)
-            print("glove file has been loaded\n")
-            
-        sess.run(cnn.E.assign(initEmbedding))
-
-    def train_step(x_batch, y_batch):
-        """
-        A single training step
-        """
-        feed_dict = {
-          cnn.input_x: x_batch,
-          cnn.input_y: y_batch,
-          cnn.dropout_keep_prob: FLAGS.dropout_keep_prob
-        }
-        _, step, summaries, loss, accuracy = sess.run(
-            [train_op, global_step, train_summary_op, cnn.loss, cnn.accuracy],
-            feed_dict)
-        time_str = datetime.datetime.now().isoformat()
-        print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
-        train_summary_writer.add_summary(summaries, step)
-
-    def dev_step(x_batch, y_batch, writer=None):
-        """
-        Evaluates model on a dev set
-        """
-        feed_dict = {
-          cnn.input_x: x_batch,
-          cnn.input_y: y_batch,
-          cnn.dropout_keep_prob: 1.0
-        }
-        step, summaries, loss, accuracy = sess.run(
-            [global_step, dev_summary_op, cnn.loss, cnn.accuracy],
-            feed_dict)
-        time_str = datetime.datetime.now().isoformat()
-        print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
-        if writer:
-            writer.add_summary(summaries, step)
+        def dev_step(x_batch, y_batch, writer=None):
+            """
+            Evaluates model on a dev set
+            """
+            feed_dict = {
+              cnn.input_x: x_batch,
+              cnn.input_y: y_batch,
+              cnn.dropout_keep_prob: 1.0
+            }
+            step, summaries, loss, accuracy = sess.run(
+                [global_step, dev_summary_op, cnn.loss, cnn.accuracy],
+                feed_dict)
+            time_str = datetime.datetime.now().isoformat()
+            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+            if writer:
+                writer.add_summary(summaries, step)
 
     # Generate batches
     train_batches = batch_iter(
@@ -268,4 +235,23 @@ with tf.Graph().as_default():
             path = saver.save(sess, checkpoint_prefix, global_step=current_step)
             print("Saved model checkpoint to {}\n".format(path))
 
+def main():
+  args = process_command_line()
+  if args.is_email:
+    load_emails()
+    train_tensorflow()
+  else:
+    load_threads()
+    train_tensorflow()
 
+def process_command_line():
+  """Sets command-line flags"""
+  parser = argparse.ArgumentParser(description="Write and read formatted Json files")
+  # optional arguments
+  parser.add_argument('--email', dest='is_email', type=bool, default=False, help='Creates labels on the e-mail lavel')
+  parser.add_argument('--thread', dest='is_thread', type=bool, default=False, help='Creates labels on the thread level')
+  args = parser.parse_args()
+  return args
+
+if __name__ == "__main__":
+    main()
