@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from processData import load_data_and_labels, load_data_and_labels_bow, batch_iter
 from utils.treebank import StanfordSentiment
 import utils.glove as glove
+from sklearn import metrics
 
 def getSentenceFeatures(tokens, wordVectors, sentence):
     """
@@ -50,8 +51,8 @@ def getSentenceFeatures(tokens, wordVectors, sentence):
 
 def get_glove_data():
   embedding_dimension = 100
-  x_text, y = load_data_and_labels("email_contents.npy", "labels.npy")
-  num_recipients_features = np.array(np.load("num_recipients_features.npy"))
+  x_text, y = load_data_and_labels("email_contents_nodup.npy", "labels_nodup.npy")
+  num_recipients_features = np.array(np.load("num_recipients_features_nodup.npy"))
 
   dataset = StanfordSentiment()
   tokens = dataset.tokens()
@@ -100,9 +101,15 @@ def get_glove_data():
   x_shuffled = trainFeatures[shuffle_indices]
   y_shuffled = y[shuffle_indices]
 
-  train = 0.7
-  dev = 0.3
-  return train_test_split(x_shuffled, y_shuffled, test_size=0.3, random_state=42)
+  train = 0.6
+  dev = 0.2
+  test = 0.2
+  # train x, dev x, test x, train y, dev y, test y
+  train_cutoff = int(0.6 * len(x_shuffled))
+  dev_cutoff = int(0.8 * len(x_shuffled))
+  test_cutoff = int(len(x_shuffled))
+  return x_shuffled[0:train_cutoff], x_shuffled[train_cutoff:dev_cutoff], x_shuffled[dev_cutoff:test_cutoff], \
+         y_shuffled[0:train_cutoff], y_shuffled[train_cutoff:dev_cutoff], y_shuffled[dev_cutoff:test_cutoff],
 
 def get_count_data():
 
@@ -128,7 +135,7 @@ def get_count_data():
   dev = 0.3
   return train_test_split(x_shuffled, y_shuffled, test_size=0.3, random_state=42)
 
-train_X, test_X, train_y, test_y = get_glove_data()
+train_X, dev_X, test_X, train_y, dev_y, test_y = get_glove_data()
 
 # Parameters
 RANDOM_SEED = 42
@@ -137,10 +144,11 @@ learning_rate = 0.01
 training_epochs = 100
 batch_size = 500
 display_step = 1
-evaluate_every = 50
+evaluate_every = 25
 
 # Network Parameters
-n_hidden_1 = 256 # 1st layer number of features
+n_hidden_1 = 256
+n_hidden_2 = 128
 n_input = train_X.shape[1] # MNIST data input (img shape: 28*28)
 n_classes = train_y.shape[1] # MNIST total classes (0-9 digits)
 
@@ -151,12 +159,30 @@ x = tf.placeholder(tf.float32, [None, n_input], name='X')
 y = tf.placeholder(tf.float32, [None, n_classes], name='y')
 
 # Create model
-def perceptron(x, weights, biases):
+def single_perceptron(x, weights, biases):
+    # Hidden layer with RELU activation
+    layer_1 = tf.add(tf.matmul(x, weights['w1']), biases['b1'])
+    out_layer= tf.nn.relu(layer_1)
+    # Create a summary to visualize the first layer ReLU activation
+    tf.summary.histogram("out", layer_1)
+    # Output layer
+    return out_layer
+
+# Store layers weight & bias
+weights = {
+    'w1': tf.Variable(tf.random_normal([n_input, n_classes]), name='W1'),
+}
+biases = {
+    'b1': tf.Variable(tf.random_normal([n_classes]), name='b1'),
+}
+
+# Create model
+def double_perceptron(x, weights, biases):
     # Hidden layer with RELU activation
     layer_1 = tf.add(tf.matmul(x, weights['w1']), biases['b1'])
     layer_1 = tf.nn.softmax(layer_1)
     # Create a summary to visualize the first layer ReLU activation
-    tf.summary.histogram("softmax1", layer_1)
+    tf.summary.histogram("sigmoid1", layer_1)
     # Output layer
     out_layer = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
     return out_layer
@@ -164,16 +190,45 @@ def perceptron(x, weights, biases):
 # Store layers weight & bias
 weights = {
     'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
-    'w2': tf.Variable(tf.random_normal([n_hidden_1, n_classes]), name='W2'),
+    'w2': tf.Variable(tf.random_normal([n_hidden_1, n_classes]), name='W2')
 }
 biases = {
     'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
-    'b2': tf.Variable(tf.random_normal([n_classes]), name='b2'),
+    'b2': tf.Variable(tf.random_normal([n_classes]), name='b2')
+}
+
+# Create model
+def triple_perceptron(x, weights, biases):
+    # Hidden layer with RELU activation
+    layer_1 = tf.add(tf.matmul(x, weights['w1']), biases['b1'])
+    layer_1 = tf.nn.sigmoid(layer_1)
+    # Create a summary to visualize the first layer softmax activation
+    tf.summary.histogram("softmax1", layer_1)
+
+    layer_2 = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
+    layer_2 = tf.nn.sigmoid(layer_2)
+    # Create a summary to visualize the first layer softmax activation
+    tf.summary.histogram("relu2", layer_2)
+
+    # Output layer
+    out_layer = tf.add(tf.matmul(layer_2, weights['w3']), biases['b3'])
+    return out_layer
+
+# Store layers weight & bias
+weights = {
+    'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
+    'w2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2]), name='W2'),
+    'w3': tf.Variable(tf.random_normal([n_hidden_2, n_classes]), name='W3'),
+}
+biases = {
+    'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
+    'b2': tf.Variable(tf.random_normal([n_hidden_2]), name='b2'),
+    'b3': tf.Variable(tf.random_normal([n_classes]), name='b3'),
 }
 
 # Encapsulating all ops into scopes, making Tensorboard's Graph
 # Visualization more convenient
-pred = perceptron(x, weights, biases)
+pred = triple_perceptron(x, weights, biases)
 
 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
 
@@ -245,13 +300,18 @@ with tf.Session() as sess:
         if current_step % evaluate_every == 0:
             print("\nEvaluation:")
             x_dev_batch, y_dev_batch = zip(*dev_batch)
-            step, summaries, loss_1, accuracy = sess.run([global_step, dev_summary_op, loss, acc],
+            step, summaries, y_pred, loss_1, accuracy = sess.run([global_step, dev_summary_op, pred, loss, acc],
                                      feed_dict={x: x_dev_batch, y: y_dev_batch})
             time_str = datetime.datetime.now().isoformat()
             print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
             dev_summary_writer.add_summary(summaries, step)
             dev_summary_writer.flush()
             print("")
+
+            # Report precision, recall, F1
+            print("Precision: {}%".format(100*metrics.precision_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
+            print("Recall: {}%".format(100*metrics.recall_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
+            print("f1_score: {}%".format(100*metrics.f1_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
 
     train_summary_writer.close()
     dev_summary_writer.close()
