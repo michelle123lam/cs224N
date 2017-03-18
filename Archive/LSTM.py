@@ -32,7 +32,9 @@ tf.flags.DEFINE_boolean("use_non_lexical", False, "Enable/disable additional non
 tf.flags.DEFINE_integer("num_non_lexical", 2, "Number of additional non-lexical features (default: 2)")
 tf.flags.DEFINE_boolean("use_attention", False, "Enable/disable attention cells (default: False)")
 tf.flags.DEFINE_integer("attn_length", 4, "Defines the size of an attention window (default: 4)")
-
+tf.flags.DEFINE_boolean("use_multi_rnn_cell", False, "Enable/disable multi-rnn cells (default: False)")
+tf.flags.DEFINE_integer("num_multi_rnn", 4, "Defines number of rnn cells (default: 4)")
+tf.flags.DEFINE_boolean("use_bidirectional", False, "Enable/disable bi-directional LSTM (default: False)")
 
 # Model parameters
 tf.flags.DEFINE_boolean("use_dropout", False, "Enable/disable dropout (default: False)")
@@ -232,11 +234,9 @@ if FLAGS.use_word_embeddings:
           num_words_bucket = 5
       num_words_features.append(num_words_bucket)
     num_words_features = np.array(num_words_features)
-    # emails = np.concatenate((emails, num_words_features.T), axis=0)
     emails_extended[:, 1] = num_words_features.T
 
     # Get num_recipients_features
-    # emails = np.concatenate((emails, num_recipients_features.T), axis=0)
     emails_extended[:, 2] = num_recipients_features.T
     emails = emails_extended
 
@@ -404,8 +404,14 @@ if FLAGS.use_dropout:
 if FLAGS.use_attention:
   cell = tf.contrib.rnn.AttentionCellWrapper(cell=cell, attn_length=FLAGS.attn_length, state_is_tuple=True)
 
+if FLAGS.use_multi_rnn_cell:
+  cell = tf.contrib.rnn.MultiRNNCell(cells=[cell] * FLAGS.num_multi_rnn, state_is_tuple=True)
+
 # Dynamic rnn
-if FLAGS.use_word_embeddings:
+if FLAGS.use_word_embeddings and FLAGS.use_bidirectional:
+  rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell, cell_bw=cell, inputs=data, sequence_length=X_lengths, dtype=tf.float32)
+  rnn_outputs = tf.concat(rnn_outputs, 2)
+elif FLAGS.use_word_embeddings:
   rnn_outputs, _ = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32, sequence_length=X_lengths)
 else:
   rnn_outputs, _ = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32)
@@ -416,9 +422,11 @@ print "rnn_outputs2", rnn_outputs.get_shape()
 rnn_outputs = rnn_outputs[-1]
 print "rnn_outputs3", rnn_outputs.get_shape()
 
-weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN, N_CLASSES]))
+if FLAGS.use_bidirectional:
+  weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN*2, N_CLASSES]))
+else:
+  weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN, N_CLASSES]))
 bias = tf.Variable(tf.constant(0.1, shape=[N_CLASSES]))
-# prediction = tf.nn.softmax(tf.matmul(rnn_outputs, weight) + bias)
 prediction = tf.matmul(rnn_outputs, weight) + bias
 print "weight", weight.get_shape()
 print "bias", bias.get_shape()
