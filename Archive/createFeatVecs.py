@@ -1,6 +1,7 @@
 # Creates feature vectors from Enron Organizational Hierarchy json data
 # CS 224N Winter 2017
 
+import nltk
 import json
 import argparse
 import string
@@ -11,10 +12,11 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import train_test_split
 from random import shuffle
 import numpy as np
+from random import randint
 
+# Constants and global variables
 CONST_NUM_EMAILS = 276279
 CONST_NUM_THREADS = 36196
-
 emails_map = {}  # Map from email u_id to the email content
 
 def get_power_labels_and_indices_thread(d_threads, d_emails):
@@ -228,7 +230,7 @@ def get_power_labels_and_indices(d_emails):
     # check valid text content
     if "subject" not in email and "body" not in email:
       continue
-
+    potential = []
     for j in range(0, len(recipients)):
       cur_key = "(" + str(email["uid"]) + ", " + str(sender) + ", " + str(recipients[j]) + ")" # key for json
       content = ""
@@ -238,33 +240,30 @@ def get_power_labels_and_indices(d_emails):
         content += email["body"]
 
       content = content.encode('utf-8').replace('\n', '')
-
       # dominant sender, subordinate recipient = label 0
       if (int(sender), int(recipients[j])) in dominance_map:
-        email_contents.append(content) # Add email contents to list
-        labels.append(0)
-        dom_sub += 1
-
-        # get num_recipients
-        num_recipients_vector.append(len(recipients))
-
-        # get gender feature
-        sender_recipient_tuple = [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]
-        gender_feature_vector.append(sender_recipient_tuple)
-        break
-
+        potential.append((content, 0, len(recipients), [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]))
       elif (int(recipients[j]), int(sender)) in dominance_map:
-        email_contents.append(content) # Add email contents to list
-        labels.append(1)
-        sub_dom += 1
-
-        # get num_recipients
-        num_recipients_vector.append(len(recipients))
-
-        # get gender feature
-        sender_recipient_tuple = [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]
-        gender_feature_vector.append(sender_recipient_tuple)
-        break
+        potential.append((content, 1, len(recipients), [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]))
+    if len(potential) > 1:
+      index = randint(0, len(potential) - 1)
+      email_contents.append(potential[index][0])
+      labels.append(potential[index][1])
+      if potential[index][1] == 0:
+          dom_sub += 1
+      else:
+          sub_dom += 1
+      num_recipients_vector.append(potential[index][2])
+      gender_feature_vector.append(potential[index][3])
+    elif len(potential) == 1:
+      email_contents.append(potential[0][0])
+      labels.append(potential[0][1])
+      if potential[0][1] == 0:
+          dom_sub += 1
+      else:
+          sub_dom += 1
+      num_recipients_vector.append(potential[0][2])
+      gender_feature_vector.append(potential[0][3])
 
   print("Dominant-Subordinates: " + str(dom_sub))
   print("Subordinate-Dominants: " + str(sub_dom))
@@ -403,22 +402,21 @@ def main():
 
   # Generates power labels and indices per thread
   if args.is_thread:
-    with open('./threads_fixed.json') as file:
-      d_threads = json.load(file)
     with open('./emails_fixed.json') as file:
       d_emails = json.load(file)
+    with open('./threads_fixed.json') as file:
+      d_threads = json.load(file)
+    thread_labels, thread_content = get_power_labels_and_indices_thread(d_threads, d_emails)
+    print "Finished getting power labels and indices for thread."
 
-      thread_labels, thread_content = get_power_labels_and_indices_thread(d_threads, d_emails)
-      print "Finished getting power labels and indices for thread."
+    # Save thread contents
+    thread_content = np.array(thread_content)
+    np.save("thread_content.npy", thread_content)
+    with open('thread_content.txt','wb') as f:
+        np.savetxt(f, thread_content, delimiter='\n', fmt="%s")
 
-      # Save thread contents
-      thread_content = np.array(thread_content)
-      np.save("thread_content.npy", thread_content)
-      with open('thread_content.txt','wb') as f:
-          np.savetxt(f, thread_content, delimiter='\n', fmt="%s")
-
-      np.save("thread_labels.npy", thread_labels)
-      np.savetxt("thread_labels.txt", thread_labels)
+    np.save("thread_labels.npy", thread_labels)
+    np.savetxt("thread_labels.txt", thread_labels)
 
    # Produces bag-of-words features
   if args.is_bow:
