@@ -25,10 +25,13 @@ tf.flags.DEFINE_boolean("get_stats", False, "Get stats on input data (default: F
 
 # Feature representation settings
 tf.flags.DEFINE_boolean("use_grouped", False, "Enable/disable grouped (sender, recipient) features (default: False)")
+tf.flags.DEFINE_boolean("use_no_dup", False, "Enable/disable non-duplicated emails (default: False)")
 tf.flags.DEFINE_boolean("use_word_embeddings", False, "Enable/disable the word embedding (default: False)")
 tf.flags.DEFINE_boolean("use_sentence_vec", False, "Enable/disable sentence vector representation (default: False)")
 tf.flags.DEFINE_boolean("use_non_lexical", False, "Enable/disable additional non-lexical features (default: False)")
-tf.flags.DEFINE_integer("num_non_lexical", 0, "Number of additional non-lexical features (default: 0)")
+tf.flags.DEFINE_integer("num_non_lexical", 2, "Number of additional non-lexical features (default: 2)")
+tf.flags.DEFINE_boolean("use_attention", False, "Enable/disable attention cells (default: False)")
+tf.flags.DEFINE_integer("attn_length", 4, "Defines the size of an attention window (default: 4)")
 
 
 # Model parameters
@@ -63,10 +66,18 @@ def getDataStats(emails, tokens, wordVectors):
   """
   num_word_vals = []
 
-  # Num of words w/ glove representation (mean, stddev, max, min)
   if tokens is not None and wordVectors is not None:
-    num_word_vals_glove = [[1 for word in email if tokens.get(word, 0) != 0] for email in emails]
-    num_word_vals = [len(num_word_row) for num_word_row in num_word_vals_glove]
+    # Num sentences (mean, stddev, max, min)
+    if FLAGS.use_sentence_vec:
+      print "Sentence stats:"
+      # Find num sentences per email
+      num_word_vals = [len(tokenize.sent_tokenize(email)) for email in emails]
+
+    # Num of words w/ glove representation (mean, stddev, max, min)
+    else:
+      num_word_vals_glove = [[1 for word in email if tokens.get(word, 0) != 0] for email in emails]
+      num_word_vals = [len(num_word_row) for num_word_row in num_word_vals_glove]
+
   else:
   # Num of words (mean, stddev, max, min)
     num_word_vals = [len(email.split(" ")) for email in emails]
@@ -139,18 +150,14 @@ def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, i
     """
     result = np.zeros((max_email_length, wordVectors.shape[1],))
     sentences = tokenize.sent_tokenize(email)
-    # print "len(sentences):", len(sentences)
 
     # Gets list of word vectors for each sentence
     sentenceFeatures = [getWordVectorFeatures(tokens, wordVectors, sentences[i], max_sentence_length, isTest=isTest) for i in range(len(sentences))]
     sentenceFeatures = np.array(sentenceFeatures)
-    # print "sentenceFeatures.shape", sentenceFeatures.shape
 
     # Concatenate word vectors for each sentence and sum all sentence vectors
     #(n_sentences, n_words, word_vec_dims)
     sentenceFeatures = np.sum(sentenceFeatures, axis=0)
-
-    # print "result.shape:", result.shape
 
     # Update length of current feature (for word-level features)
     # TODO: update to reflect variations in sentence length
@@ -177,19 +184,24 @@ if FLAGS.use_grouped:
   # Use features grouped by (sender, recipient) pairs
   email_contents_file = "email_contents_grouped.npy"
   labels_file = "labels_grouped.npy"
+elif FLAGS.use_no_dup: # Note: just for non-grouped!
+  # Use non-duplicated emails
+  email_contents_file = "email_contents_nodup.npy"
+  labels_file = "labels_nodup.npy"
 else:
   # Use features for each email
   email_contents_file = "email_contents.npy"
   labels_file = "labels.npy"
 
 # Load non-lexical features
-if FLAGS.use_non_lexical:
+if FLAGS.use_non_lexical and FLAGS.use_no_dup:
+  num_recipients_features = np.array(np.load("num_recipients_features_nodup.npy"))
+elif FLAGS.use_non_lexical:
   num_recipients_features = np.array(np.load("num_recipients_features.npy"))
 
 if FLAGS.use_word_embeddings:
   # ==================================================
   # Processing for concatenated word vector features
-
   emails, labels = load_data_and_labels(email_contents_file, labels_file)
   emails = np.array(emails)
 
@@ -274,12 +286,15 @@ if FLAGS.use_word_embeddings:
   nTrain = len(x_train)
   trainFeature_lens = []
   trainFeatures = []
-  if FLAGS.use_sentence_vec:
+
+  if FLAGS.use_sentence_vec and FLAGS.use_non_lexical:
     # (n_emails, n_words, n_word_vec_dims)
     trainFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_train[i][0], max_email_length) for i in xrange(nTrain)]
+  elif FLAGS.use_sentence_vec:
+    trainFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
   else:
     # (n_emails, n_words, n_word_vec_dims)
-    trainFeatures = [getWordVectorFeatures(tokens, wordVectors, x_train[i][0], max_email_length) for i in xrange(nTrain)]
+    trainFeatures = [getWordVectorFeatures(tokens, wordVectors, x_train[i], max_email_length) for i in xrange(nTrain)]
   trainFeatures = np.array(trainFeatures)
   if FLAGS.use_non_lexical:
     # (n_emails, num_non_lexical, n_word_vec_dims)
@@ -287,9 +302,6 @@ if FLAGS.use_word_embeddings:
     x_train_feats = x_train[:, 1:]
     print "x_train_feats", x_train_feats.shape
     non_lexical_feats[:, :, 0] = x_train_feats.astype(int)
-    # non_lexical_feats += x_train_feats.astype(int)
-    # non_lexical_feats[:, 0, :] = x_train[:][1]
-    # non_lexical_feats[:, 1, :] = x_train[:][2]
     trainFeatures = np.concatenate((trainFeatures, non_lexical_feats), axis=1)
   trainLabels = y_train
   print "Completed trainFeatures!"
@@ -301,10 +313,13 @@ if FLAGS.use_word_embeddings:
   nTest = len(x_test)
   testFeature_lens = []
   testFeatures = []
-  if FLAGS.use_sentence_vec:
+
+  if FLAGS.use_sentence_vec and FLAGS.use_non_lexical:
     testFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_test[i][0], max_email_length, isTest=True) for i in xrange(nTest)]
+  elif FLAGS.use_sentence_vec:
+    testFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
   else:
-    testFeatures = [getWordVectorFeatures(tokens, wordVectors, x_test[i][0], max_email_length, isTest=True) for i in xrange(nTest)]
+    testFeatures = [getWordVectorFeatures(tokens, wordVectors, x_test[i], max_email_length, isTest=True) for i in xrange(nTest)]
   testFeatures = np.array(testFeatures)
   if FLAGS.use_non_lexical:
     # (n_emails, num_non_lexical, n_word_vec_dims)
@@ -312,9 +327,6 @@ if FLAGS.use_word_embeddings:
     x_test_feats = x_test[:, 1:]
     print "x_test_feats", x_test_feats.shape
     non_lexical_feats[:, :, 0] = x_test_feats.astype(int)
-    # non_lexical_feats += x_test_feats.astype(int)
-    # non_lexical_feats[:, 0, :] = x_test[:][1]
-    # non_lexical_feats[:, 1, :] = x_test[:][2]
     testFeatures = np.concatenate((testFeatures, non_lexical_feats), axis=1)
   testLabels = y_test
   print "Completed testFeatures!"
@@ -366,11 +378,9 @@ else:
 # ==================================================
 # LSTM
 
-NUM_EXAMPLES = trainFeatures.shape[0] # 47411
-N_INPUT = trainFeatures.shape[2] # 14080
+NUM_EXAMPLES = trainFeatures.shape[0]
+N_INPUT = trainFeatures.shape[2]
 RNN_HIDDEN = FLAGS.num_hidden
-LEARNING_RATE = FLAGS.learning_rate
-keep_rate = FLAGS.dropout_keep_prob
 N_CLASSES = 2
 
 BATCH_SIZE = FLAGS.batch_size
@@ -380,19 +390,26 @@ if FLAGS.use_word_embeddings:
 else:
   N_TIMESTEPS = 1
 
-
 data = tf.placeholder(tf.float32, [None, N_TIMESTEPS, N_INPUT]) # (batch_size, n_timesteps, n_features)
 target = tf.placeholder(tf.float32, [None, N_CLASSES]) # (batch_size, n_classes)
 if FLAGS.use_word_embeddings:
   X_lengths = tf.placeholder(tf.int32, [None]) # (batch_size); contains number of words in each sentence (to handle padding)
 
-cell = tf.contrib.rnn.BasicLSTMCell(RNN_HIDDEN)
+cell = tf.contrib.rnn.BasicLSTMCell(RNN_HIDDEN, state_is_tuple=True)
+# Dropout cells
 if FLAGS.use_dropout:
-  cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=keep_rate, output_keep_prob=keep_rate)
+  cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=FLAGS.dropout_keep_prob, output_keep_prob=FLAGS.dropout_keep_prob)
+
+# Attention cells
+if FLAGS.use_attention:
+  cell = tf.contrib.rnn.AttentionCellWrapper(cell=cell, attn_length=FLAGS.attn_length, state_is_tuple=True)
+
+# Dynamic rnn
 if FLAGS.use_word_embeddings:
   rnn_outputs, _ = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32, sequence_length=X_lengths)
 else:
   rnn_outputs, _ = tf.nn.dynamic_rnn(cell, data, dtype=tf.float32)
+
 print "rnn_outputs1", rnn_outputs.get_shape()
 rnn_outputs = tf.transpose(rnn_outputs, [1, 0, 2])
 print "rnn_outputs2", rnn_outputs.get_shape()
@@ -401,14 +418,15 @@ print "rnn_outputs3", rnn_outputs.get_shape()
 
 weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN, N_CLASSES]))
 bias = tf.Variable(tf.constant(0.1, shape=[N_CLASSES]))
-prediction = tf.nn.softmax(tf.matmul(rnn_outputs, weight) + bias)
+# prediction = tf.nn.softmax(tf.matmul(rnn_outputs, weight) + bias)
+prediction = tf.matmul(rnn_outputs, weight) + bias
 print "weight", weight.get_shape()
 print "bias", bias.get_shape()
 print "prediction", prediction.get_shape()
 
 with tf.name_scope('cross_entropy'):
   cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=target))
-  optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
+  optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
   minimize = optimizer.minimize(cross_entropy)
 tf.summary.scalar('cross-entropy', cross_entropy)
 
