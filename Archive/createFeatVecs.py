@@ -181,7 +181,7 @@ def get_power_labels_and_indices_grouped(d_emails):
   avgNumTokensPerEmail = []
   for cur_key in email_contents_map: # for each pair found in emails
     labels.append(labels_map[cur_key])
-    email_contents.append(email_contents_map[cur_key])
+    email_contents.append(email_contents_map[cur_key][0])
     avgNumRecipients.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
     avgNumTokensPerEmail.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
 
