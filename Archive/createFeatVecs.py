@@ -13,6 +13,7 @@ from sklearn.model_selection import train_test_split
 from random import shuffle
 import numpy as np
 from random import randint
+from processData import clean_str
 
 # Constants and global variables
 CONST_NUM_EMAILS = 276279
@@ -151,8 +152,6 @@ def get_power_labels_and_indices_grouped(d_emails):
     if "subject" not in email and "body" not in email:
       continue
 
-    generate_features_for_recipient(email, sender, recipients, email_contents_map, labels_map)
-
     # Prepare content of the email
     content = ""
     if "subject" in email:
@@ -169,20 +168,27 @@ def get_power_labels_and_indices_grouped(d_emails):
       if cur_key in labels_map:
         if cur_key in email_contents_map:
           # Append to existing email contents for this (sender, recipient) pair
-          email_contents_map[cur_key] = email_contents_map[cur_key] + content
+          email_contents_map[cur_key] = (email_contents_map[cur_key][0] + content, email_contents_map[cur_key][1] + len(recipients), \
+                                         email_contents_map[cur_key][2] + len(clean_str(content.strip())), email_contents_map[cur_key][3] + 1)
         else:
           # Create new entry for this (sender, recipient) pair
-          email_contents_map[cur_key] = content
+          email_contents_map[cur_key] = (content, len(recipients), len(content.split(" ")), 1)
 
   # Generate ordered lists for labels and email_contents
   labels = []
   email_contents =[]
+  avgNumRecipients = []
+  avgNumTokensPerEmail = []
   for cur_key in email_contents_map: # for each pair found in emails
     labels.append(labels_map[cur_key])
     email_contents.append(email_contents_map[cur_key])
+    avgNumRecipients.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
+    avgNumTokensPerEmail.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
 
   print "# labels: %d, # email_contents: %d" % (len(labels), len(email_contents))
-  return labels, email_contents
+  print len(avgNumRecipients)
+  print len(avgNumTokensPerEmail)
+  return labels, email_contents, avgNumRecipients, avgNumTokensPerEmail
 
 
 def get_power_labels_and_indices(d_emails):
@@ -426,7 +432,7 @@ def main():
       if args.is_grouped:
         print "Generating *grouped* features for (sender, recipient) pairs..."
         # Generate features for (sender, recipient) pairs
-        labels, email_contents = get_power_labels_and_indices_grouped(d_emails)
+        labels, email_contents, avgNumRecipients, avgNumTokensPerEmail = get_power_labels_and_indices_grouped(d_emails)
         print "Finished getting power labels and indices!"
 
         # save email_contents
@@ -439,7 +445,16 @@ def main():
         np.save('labels_grouped.npy', labels)
         np.savetxt('labels_grouped.txt', labels)
 
+        avgNumRecipients = np.array(avgNumRecipients)
+        np.save('avg_num_recipients.npy', avgNumRecipients)
+        np.savetxt('avg_num_recipients.txt', avgNumRecipients)
+
+        avgNumTokensPerEmail = np.array(avgNumTokensPerEmail)
+        np.save('avg_num_tokens_per_email.npy', avgNumTokensPerEmail)
+        np.savetxt('avg_num_tokens_per_email.txt', avgNumTokensPerEmail)
+
         print "Finished saving email_contents and labels to files!"
+        exit(0)
 
       else:
         labels, email_contents, num_recipients_vector, gender_feature_vector = get_power_labels_and_indices(d_emails)
