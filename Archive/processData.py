@@ -117,14 +117,15 @@ def load_data_and_labels_bow(email_contents_file, labels_file):
     # y contains an array of labels for all examples
     return [x_text, labels]
 
-def load_data_and_labels_thread(thread_content_file, thread_labels):
+def load_data_and_labels_thread(thread_content_file, thread_labels, non_lexical_features):
   thread_content = np.load(thread_content_file)
   thread_content = [clean_str(emails.strip()) for emails in thread_content]  # Split by words and clean with regex
   thread_labels = np.array(np.load(thread_labels))
   thread_labels = [[1, 0] if a == 0 else [0, 1] for a in thread_labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
   thread_labels = np.array(thread_labels)
+  non_lexical_features = np.load(non_lexical_features)
 
-  return [thread_content, thread_labels]
+  return [thread_content, thread_labels, non_lexical_features]
 
 def load_data_and_labels(email_contents_file, labels_file):
     """
@@ -134,6 +135,7 @@ def load_data_and_labels(email_contents_file, labels_file):
     # Load data from files
     email_contents = np.load(email_contents_file)
     email_contents = [clean_str(email) for email in email_contents]
+    email_contents = np.array(email_contents)
 
     # Number of emails is: 67,730
     labels = np.array(np.load(labels_file))
