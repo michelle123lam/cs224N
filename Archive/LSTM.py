@@ -35,6 +35,8 @@ tf.flags.DEFINE_integer("attn_length", 4, "Defines the size of an attention wind
 tf.flags.DEFINE_boolean("use_multi_rnn_cell", False, "Enable/disable multi-rnn cells (default: False)")
 tf.flags.DEFINE_integer("num_multi_rnn", 4, "Defines number of rnn cells (default: 4)")
 tf.flags.DEFINE_boolean("use_bidirectional", False, "Enable/disable bi-directional LSTM (default: False)")
+tf.flags.DEFINE_boolean("use_hyperparameter_tuning", False, "Enable/disable auto hyperparameter tuning (default: False)")
+tf.flags.DEFINE_string("selected_hyperparam", "learning_rate", "Choose hyperparameter for tuning (default: learning_rate)")
 
 # Model parameters
 tf.flags.DEFINE_boolean("use_dropout", False, "Enable/disable dropout (default: False)")
@@ -108,7 +110,7 @@ def plotAccuracyVsTime(num_epochs, train_metrics, test_metrics, filename, y_var_
   plt.savefig(dir + filename)
 
 
-def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=False):
+def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=False, isDev=False):
     """
     Finds word-level features given an email
     Inputs:
@@ -138,12 +140,14 @@ def getWordVectorFeatures(tokens, wordVectors, email, max_email_length, isTest=F
     # Update length of current feature (for word-level features)
     if isTest:
       testFeature_lens.append(emailVector.shape[0] + FLAGS.num_non_lexical)
+    elif isDev:
+      devFeature_lens.append(emailVector.shape[0] + FLAGS.num_non_lexical)
     else:
       trainFeature_lens.append(emailVector.shape[0] + FLAGS.num_non_lexical)
     return result
 
 
-def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, isTest=False):
+def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, isTest=False, isDev=False):
     """
     Finds sentence vectors by concatenating the word vectors for the first [max_sentence_length] words in each sentence
     Then sums all sentence vectors for each email
@@ -168,6 +172,8 @@ def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, i
 
     if isTest:
       testFeature_lens.append(max_sentence_length + FLAGS.num_non_lexical)
+    elif isDev:
+      devFeature_lens.append(max_sentence_length + FLAGS.num_non_lexical)
     else:
       trainFeature_lens.append(max_sentence_length + FLAGS.num_non_lexical)
 
@@ -196,7 +202,10 @@ else:
   labels_file = "labels.npy"
 
 # Load non-lexical features
-if FLAGS.use_non_lexical and FLAGS.use_no_dup:
+if FLAGS.use_non_lexical and FLAGS.use_grouped:
+  num_recipients_features = np.array(np.load("avg_num_recipients_grouped.npy"))
+  num_words_features_unprocessed = np.array(np.load("avg_num_tokens_per_email_grouped.npy"))
+elif FLAGS.use_non_lexical and FLAGS.use_no_dup:
   num_recipients_features = np.array(np.load("num_recipients_features_nodup.npy"))
 elif FLAGS.use_non_lexical:
   num_recipients_features = np.array(np.load("num_recipients_features.npy"))
@@ -216,9 +225,12 @@ if FLAGS.use_word_embeddings:
     # Get num_words_features
     num_words_features = []
     for i in xrange(nTrain):
-      words = emails[i]
+      if FLAGS.use_grouped:
+        num_words = num_words_features_unprocessed[i]
+      else:
+        words = emails[i]
+        num_words = len(words)
       # Calculate num_words feature
-      num_words = len(words)
       # Place number of words in buckets
       if num_words < 10:
           num_words_bucket = 0
@@ -246,17 +258,26 @@ if FLAGS.use_word_embeddings:
   emails_shuffled = emails[shuffle_indices]
   labels_shuffled = labels[shuffle_indices]
 
-  # Split data into train and test set
-  train = 0.7
-  dev = 0.3
-  x_train, x_test, y_train, y_test = train_test_split(emails_shuffled, labels_shuffled, test_size=0.3, random_state=42)
-  # x_train = x_train[:1000]
-  # x_test = x_test[:1000]
-  # y_train = y_train[:1000]
-  # y_test = y_test[:1000]
+  # Train/dev/test split
+  train = 0.6
+  dev = 0.2
+  test = 0.2
+  # train x, dev x, test x, train y, dev y, test y
+  train_cutoff = int(0.6 * len(emails_shuffled))
+  dev_cutoff = int(0.8 * len(emails_shuffled))
+  test_cutoff = int(len(emails_shuffled))
+
+  x_train = emails_shuffled[0:train_cutoff]
+  x_dev = emails_shuffled[train_cutoff:dev_cutoff]
+  x_test = emails_shuffled[dev_cutoff:test_cutoff]
+  y_train = labels_shuffled[0:train_cutoff]
+  y_dev = labels_shuffled[train_cutoff:dev_cutoff]
+  y_test = labels_shuffled[dev_cutoff:test_cutoff]
   print "x_train", x_train.shape
+  print "x_dev", x_dev.shape
   print "x_test", x_test.shape
   print "y_train", y_train.shape
+  print "y_dev", y_dev.shape
   print "y_test", y_test.shape
 
   emails = np.array(emails)
@@ -308,6 +329,32 @@ if FLAGS.use_word_embeddings:
   print "trainFeatures", trainFeatures.shape
   print "trainLabels", trainLabels.shape
   print "trainFeature_lens", trainFeature_lens[:10]
+
+  # Prepare dev set features
+  if FLAGS.use_hyperparameter_tuning:
+    nDev = len(x_dev)
+    devFeature_lens = []
+    devFeatures = []
+
+    if FLAGS.use_sentence_vec and FLAGS.use_non_lexical:
+      devFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_dev[i][0], max_email_length, isDev=True) for i in xrange(nDev)]
+    elif FLAGS.use_sentence_vec:
+      devFeatures = [getSentenceVectorFeatures(tokens, wordVectors, x_dev[i], max_email_length, isDev=True) for i in xrange(nDev)]
+    else:
+      devFeatures = [getWordVectorFeatures(tokens, wordVectors, x_dev[i], max_email_length, isDev=True) for i in xrange(nDev)]
+    devFeatures = np.array(devFeatures)
+    if FLAGS.use_non_lexical:
+      # (n_emails, num_non_lexical, n_word_vec_dims)
+      non_lexical_feats = np.zeros((nDev, FLAGS.num_non_lexical, embedding_dim))
+      x_dev_feats = x_dev[:, 1:]
+      print "x_dev_feats", x_dev_feats.shape
+      non_lexical_feats[:, :, 0] = x_dev_feats.astype(int)
+      devFeatures = np.concatenate((devFeatures, non_lexical_feats), axis=1)
+    devLabels = y_dev
+    print "Completed devFeatures!"
+    print "devFeatures", devFeatures.shape
+    print "devLabels", devLabels.shape
+    print "devFeature_lens", devFeature_lens[:10]
 
   # Prepare test set features
   nTest = len(x_test)
@@ -380,7 +427,6 @@ else:
 
 NUM_EXAMPLES = trainFeatures.shape[0]
 N_INPUT = trainFeatures.shape[2]
-RNN_HIDDEN = FLAGS.num_hidden
 N_CLASSES = 2
 
 BATCH_SIZE = FLAGS.batch_size
@@ -395,7 +441,7 @@ target = tf.placeholder(tf.float32, [None, N_CLASSES]) # (batch_size, n_classes)
 if FLAGS.use_word_embeddings:
   X_lengths = tf.placeholder(tf.int32, [None]) # (batch_size); contains number of words in each sentence (to handle padding)
 
-cell = tf.contrib.rnn.BasicLSTMCell(RNN_HIDDEN, state_is_tuple=True)
+cell = tf.contrib.rnn.BasicLSTMCell(FLAGS.num_hidden, state_is_tuple=True)
 # Dropout cells
 if FLAGS.use_dropout:
   cell = tf.contrib.rnn.DropoutWrapper(cell=cell, input_keep_prob=FLAGS.dropout_keep_prob, output_keep_prob=FLAGS.dropout_keep_prob)
@@ -407,7 +453,7 @@ if FLAGS.use_attention:
 if FLAGS.use_multi_rnn_cell:
   cell = tf.contrib.rnn.MultiRNNCell(cells=[cell] * FLAGS.num_multi_rnn, state_is_tuple=True)
 
-# Dynamic rnn
+# Dynamic rnn OR Bidirectional RNN (currently un-used)
 if FLAGS.use_word_embeddings and FLAGS.use_bidirectional:
   rnn_outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw=cell, cell_bw=cell, inputs=data, sequence_length=X_lengths, dtype=tf.float32)
   rnn_outputs = tf.concat(rnn_outputs, 2)
@@ -422,10 +468,12 @@ print "rnn_outputs2", rnn_outputs.get_shape()
 rnn_outputs = rnn_outputs[-1]
 print "rnn_outputs3", rnn_outputs.get_shape()
 
+# Bidirectional RNN (currently un-used)
 if FLAGS.use_bidirectional:
-  weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN*2, N_CLASSES]))
+  weight = tf.Variable(tf.truncated_normal([FLAGS.num_hidden*2, N_CLASSES]))
 else:
-  weight = tf.Variable(tf.truncated_normal([RNN_HIDDEN, N_CLASSES]))
+  weight = tf.Variable(tf.truncated_normal([FLAGS.num_hidden, N_CLASSES]))
+
 bias = tf.Variable(tf.constant(0.1, shape=[N_CLASSES]))
 prediction = tf.matmul(rnn_outputs, weight) + bias
 print "weight", weight.get_shape()
@@ -448,8 +496,6 @@ with tf.name_scope('accuracy'):
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 tf.summary.scalar('accuracy', accuracy)
 
-# summ_train= tf.summary.merge_all('train')
-# summ_test = tf.summary.merge_all('test')
 summ_merged = tf.summary.merge_all()
 
 # Execution of the graph
@@ -457,8 +503,10 @@ init_op = tf.global_variables_initializer()
 sess = tf.Session()
 # Generate summary data
 writer_train = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/train', sess.graph)
+if FLAGS.use_hyperparameter_tuning:
+  writer_dev = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/dev', sess.graph)
 writer_test = tf.summary.FileWriter('./lstm_logs/' + str(FLAGS.experiment_num) + '/test', sess.graph)
-sess.run(init_op)
+# sess.run(init_op)
 
 
 
@@ -470,73 +518,162 @@ n_epochs = FLAGS.num_epochs
 
 train_accuracies = []
 train_losses = []
+dev_accuracies = []
+dev_losses = []
 test_accuracies = []
 test_losses = []
 
-for i in range(n_epochs):
-    ptr = 0
-    for j in range(no_of_batches):
-      inp, out = trainFeatures[ptr:ptr+BATCH_SIZE], trainLabels[ptr:ptr+BATCH_SIZE]
-      feed_dict = {
-        data: inp,
-        target: out,
-      }
-      if FLAGS.use_word_embeddings:
-        x_lens = trainFeature_lens[ptr:ptr+BATCH_SIZE]
-        feed_dict[X_lengths] = x_lens
-      ptr+=BATCH_SIZE
-      s_train, _ = sess.run([summ_merged, minimize], feed_dict)
-      writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard1
-      if j % no_of_batches == 0:
-        # Calculate batch accuracy and loss
-        acc, loss, s_train = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
-        train_accuracies.append(acc)
-        train_losses.append(loss)
-        writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard2
-        print "Iter " + str(i*no_of_batches) + ", Minibatch Loss= " + \
-          "{:.6f}".format(loss) + ", Training Accuracy= " + \
-          "{:.5f}".format(acc)
+# Hyperparameters to tune
+learning_rate_vals = [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001]
+num_hidden_vals = [5, 10, 15, 20, 25, 30, 40, 50]
+max_email_length_vals = [10, 15, 20, 25, 30, 35]
 
-        # Calculate test accuracy and loss
+if FLAGS.use_hyperparameter_tuning:
+  if FLAGS.selected_hyperparam == "learning_rate":
+    cur_hyperparams = learning_rate_vals
+  elif FLAGS.selected_hyperparam == "num_hidden":
+    cur_hyperparams = num_hidden_vals
+  best_hyperparam = None
+  best_final_accuracy = 0
+
+  # Evaluate performance of every hyperparameter value
+  for cur_hyperparam in cur_hyperparams:
+    sess.run(init_op)
+    # Set to use current hyperparam value
+    if FLAGS.selected_hyperparam == "learning_rate":
+      FLAGS.learning_rate = cur_hyperparam
+      print "Current learning rate:", FLAGS.learning_rate
+    elif FLAGS.selected_hyperparam == "num_hidden":
+      FLAGS.num_hidden = cur_hyperparam
+      print "Current num hidden states:", FLAGS.num_hidden
+
+    for i in range(n_epochs):
+      ptr = 0
+      for j in range(no_of_batches):
+        inp, out = trainFeatures[ptr:ptr+BATCH_SIZE], trainLabels[ptr:ptr+BATCH_SIZE]
         feed_dict = {
-          data: testFeatures,
-          target: testLabels,
+          data: inp,
+          target: out,
         }
         if FLAGS.use_word_embeddings:
-          feed_dict[X_lengths] = testFeature_lens
-        acc, loss, s_test = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
-        test_accuracies.append(acc)
-        test_losses.append(loss)
-        writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
-        print "Testing Loss= " + "{:.6f}".format(loss) + \
-              ", Testing Accuracy= " + "{:.5f}".format(acc)
+          x_lens = trainFeature_lens[ptr:ptr+BATCH_SIZE]
+          feed_dict[X_lengths] = x_lens
+        ptr+=BATCH_SIZE
+        s_train, _ = sess.run([summ_merged, minimize], feed_dict)
+        writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard1
+        if j % no_of_batches == 0:
+          # Calculate batch accuracy and loss
+          acc, loss, s_train = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
+          train_accuracies.append(acc)
+          train_losses.append(loss)
+          writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard2
+          print "Iter " + str(i*no_of_batches) + ", Minibatch Loss= " + \
+            "{:.6f}".format(loss) + ", Training Accuracy= " + \
+            "{:.5f}".format(acc)
+
+          # Calculate dev accuracy and loss
+          feed_dict = {
+            data: devFeatures,
+            target: devLabels,
+          }
+          if FLAGS.use_word_embeddings:
+            feed_dict[X_lengths] = devFeature_lens
+          acc, loss, s_dev = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
+          dev_accuracies.append(acc)
+          dev_losses.append(loss)
+          writer_dev.add_summary(s_dev, (i * no_of_batches) + j) # Write to TensorBoard
+          print "Dev Loss= " + "{:.6f}".format(loss) + \
+                ", Dev Accuracy= " + "{:.5f}".format(acc)
+
+    # Final evaluation of dev accuracy and loss
+    feed_dict = {
+      data: devFeatures,
+      target: devLabels,
+    }
+    if FLAGS.use_word_embeddings:
+      feed_dict[X_lengths] = devFeature_lens
+    acc, loss, y_pred, y_target, s_dev = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged], feed_dict)
+
+    # Update hyperparameter performance
+    if acc > best_final_accuracy:
+      best_hyperparam = cur_hyperparam
+      best_final_accuracy = acc
+
+    writer_dev.add_summary(s_dev, (i * no_of_batches) + j) # Write to TensorBoard
+    print "Final Dev Loss= " + "{:.6f}".format(loss) + \
+          ", Final Dev Accuracy= " + "{:.5f}".format(acc)
+    # sess.close()
+
+  # Final evaluation of test accuracy and loss
+  FLAGS.learning_rate = best_hyperparam
+  print "BEST %s: %f" % (FLAGS.selected_hyperparam, FLAGS.learning_rate)
+
+else:
+  sess.run(init_op)
+  for i in range(n_epochs):
+      ptr = 0
+      for j in range(no_of_batches):
+        inp, out = trainFeatures[ptr:ptr+BATCH_SIZE], trainLabels[ptr:ptr+BATCH_SIZE]
+        feed_dict = {
+          data: inp,
+          target: out,
+        }
+        if FLAGS.use_word_embeddings:
+          x_lens = trainFeature_lens[ptr:ptr+BATCH_SIZE]
+          feed_dict[X_lengths] = x_lens
+        ptr+=BATCH_SIZE
+        s_train, _ = sess.run([summ_merged, minimize], feed_dict)
+        writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard1
+        if j % no_of_batches == 0:
+          # Calculate batch accuracy and loss
+          acc, loss, s_train = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
+          train_accuracies.append(acc)
+          train_losses.append(loss)
+          writer_train.add_summary(s_train, (i * no_of_batches) + j) # Write to TensorBoard2
+          print "Iter " + str(i*no_of_batches) + ", Minibatch Loss= " + \
+            "{:.6f}".format(loss) + ", Training Accuracy= " + \
+            "{:.5f}".format(acc)
+
+          # Calculate test accuracy and loss
+          feed_dict = {
+            data: testFeatures,
+            target: testLabels,
+          }
+          if FLAGS.use_word_embeddings:
+            feed_dict[X_lengths] = testFeature_lens
+          acc, loss, s_test = sess.run([accuracy, cross_entropy, summ_merged], feed_dict)
+          test_accuracies.append(acc)
+          test_losses.append(loss)
+          writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
+          print "Testing Loss= " + "{:.6f}".format(loss) + \
+                ", Testing Accuracy= " + "{:.5f}".format(acc)
 
 
-# Final evaluation of test accuracy and loss
-feed_dict = {
-  data: testFeatures,
-  target: testLabels,
-}
-if FLAGS.use_word_embeddings:
-  feed_dict[X_lengths] = testFeature_lens
-acc, loss, y_pred, y_target, s_test = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged], feed_dict)
-writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
-print "Testing Loss= " + "{:.6f}".format(loss) + \
-      ", Testing Accuracy= " + "{:.5f}".format(acc)
+  # Final evaluation of test accuracy and loss
+  feed_dict = {
+    data: testFeatures,
+    target: testLabels,
+  }
+  if FLAGS.use_word_embeddings:
+    feed_dict[X_lengths] = testFeature_lens
+  acc, loss, y_pred, y_target, s_test = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged], feed_dict)
+  writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
+  print "Testing Loss= " + "{:.6f}".format(loss) + \
+        ", Testing Accuracy= " + "{:.5f}".format(acc)
 
-# Plot accuracies, losses over time
-cur_type = "bow"
-if FLAGS.use_word_embeddings:
-  cur_type = "seq"
-accuracy_plot_name = "LSTMAccuracyPlot (%s %d).png" % (cur_type, FLAGS.experiment_num)
-loss_plot_name = "LSTMLossPlot (%s %d).png" % (cur_type, FLAGS.experiment_num)
-plotAccuracyVsTime(n_epochs, train_accuracies, test_accuracies, accuracy_plot_name, "accuracy")
-plotAccuracyVsTime(n_epochs, train_losses, test_losses, loss_plot_name, "cross-entropy loss")
+  # Plot accuracies, losses over time
+  cur_type = "bow"
+  if FLAGS.use_word_embeddings:
+    cur_type = "seq"
+  accuracy_plot_name = "LSTMAccuracyPlot (%s %d).png" % (cur_type, FLAGS.experiment_num)
+  loss_plot_name = "LSTMLossPlot (%s %d).png" % (cur_type, FLAGS.experiment_num)
+  plotAccuracyVsTime(n_epochs, train_accuracies, test_accuracies, accuracy_plot_name, "accuracy")
+  plotAccuracyVsTime(n_epochs, train_losses, test_losses, loss_plot_name, "cross-entropy loss")
 
-# Report precision, recall, F1
-print "Precision: {}%".format(100*metrics.precision_score(y_target, y_pred, average="weighted"))
-print "Recall: {}%".format(100*metrics.recall_score(y_target, y_pred, average="weighted"))
-print "f1_score: {}%".format(100*metrics.f1_score(y_target, y_pred, average="weighted"))
+  # Report precision, recall, F1
+  print "Precision: {}%".format(100*metrics.precision_score(y_target, y_pred, average="weighted"))
+  print "Recall: {}%".format(100*metrics.recall_score(y_target, y_pred, average="weighted"))
+  print "f1_score: {}%".format(100*metrics.f1_score(y_target, y_pred, average="weighted"))
 
 sess.close()
 
