@@ -137,7 +137,7 @@ def load_data_and_labels(email_contents_file, labels_file):
 
     # Number of emails is: 67,730
     labels = np.array(np.load(labels_file))
-    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] fr superior recipient
+    labels = [[1, 0] if a == 0 else [0, 1] for a in labels] # [1, 0] for superior sender; [0, 1] for superior recipient
     labels = np.array(labels)
 
     return [email_contents, labels]
