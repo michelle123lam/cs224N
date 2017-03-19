@@ -185,6 +185,11 @@ def getSentenceVectorFeatures(tokens, wordVectors, email, max_sentence_length, i
 # ==================================================
 # LOAD + PREPARE  DATA
 
+# Save results to output file
+outfile = './lstm_logs/text_results/' + str(FLAGS.experiment_num) + '_results.txt'
+with open(outfile, 'w') as f:
+  f.write("Writing results:\n")
+
 # Assign correct data source
 email_contents_file = ""
 labels_file = ""
@@ -210,6 +215,8 @@ elif FLAGS.use_non_lexical and FLAGS.use_no_dup:
 elif FLAGS.use_non_lexical:
   num_recipients_features = np.array(np.load("num_recipients_features.npy"))
 
+# if FLAGS.use_threads:
+#   # TODO
 if FLAGS.use_word_embeddings:
   # ==================================================
   # Processing for concatenated word vector features
@@ -526,13 +533,18 @@ test_losses = []
 # Hyperparameters to tune
 learning_rate_vals = [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001]
 num_hidden_vals = [5, 10, 15, 20, 25, 30, 40, 50]
-max_email_length_vals = [10, 15, 20, 25, 30, 35]
+num_multi_rnn_vals = [2, 3, 4]
+attn_length_vals = [5, 6, 8, 10, 15] #[2, 3, 4, 5, 6]
 
 if FLAGS.use_hyperparameter_tuning:
   if FLAGS.selected_hyperparam == "learning_rate":
     cur_hyperparams = learning_rate_vals
   elif FLAGS.selected_hyperparam == "num_hidden":
     cur_hyperparams = num_hidden_vals
+  elif FLAGS.selected_hyperparam == "num_multi_rnn":
+    cur_hyperparams = num_multi_rnn_vals
+  elif FLAGS.selected_hyperparam == "attn_length":
+    cur_hyperparams = attn_length_vals
   best_hyperparam = None
   best_final_accuracy = 0
 
@@ -546,6 +558,12 @@ if FLAGS.use_hyperparameter_tuning:
     elif FLAGS.selected_hyperparam == "num_hidden":
       FLAGS.num_hidden = cur_hyperparam
       print "Current num hidden states:", FLAGS.num_hidden
+    elif FLAGS.selected_hyperparam == "num_multi_rnn":
+      FLAGS.num_multi_rnn = cur_hyperparam
+      print "Current num rnn layers:", FLAGS.num_multi_rnn
+    elif FLAGS.selected_hyperparam == "attn_length":
+      FLAGS.attn_length = cur_hyperparam
+      print "Current attention length:", FLAGS.attn_length
 
     for i in range(n_epochs):
       ptr = 0
@@ -656,10 +674,21 @@ else:
   }
   if FLAGS.use_word_embeddings:
     feed_dict[X_lengths] = testFeature_lens
-  acc, loss, y_pred, y_target, s_test = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged], feed_dict)
+  acc, loss, y_pred, y_target, s_test, pred, targ = sess.run([accuracy, cross_entropy, y_p, y_t, summ_merged, prediction, target], feed_dict)
   writer_test.add_summary(s_test, (i * no_of_batches) + j) # Write to TensorBoard
   print "Testing Loss= " + "{:.6f}".format(loss) + \
         ", Testing Accuracy= " + "{:.5f}".format(acc)
+
+  # Save results to output file
+  outfile = './lstm_logs/text_results/' + str(FLAGS.experiment_num) + '_results.txt'
+  with open(outfile, 'w') as f:
+    for i in range(len(testFeatures)):
+      f.write("x_test[" + str(i) + "]:" + str(x_test[i]) + "\n")
+      f.write("y_pred[" + str(i) + "]:" + str(y_pred[i]) + "\n")
+      f.write("pred[" + str(i) + "]:" + str(pred[i]) + "\n")
+      f.write("y_target[" + str(i) + "]:" + str(y_target[i]) + "\n")
+      f.write("targ[" + str(i) + "]:" + str(targ[i]) + "\n")
+      f.write("\n")
 
   # Plot accuracies, losses over time
   cur_type = "bow"
