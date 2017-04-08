@@ -51,8 +51,11 @@ def getSentenceFeatures(tokens, wordVectors, sentence):
 
 def get_glove_data():
   embedding_dimension = 100
-  x_text, y = load_data_and_labels("email_contents_nodup.npy", "labels_nodup.npy")
+  x_text, y = load_data_and_labels_bow("email_contents_grouped.npy", "labels_grouped.npy")
   num_recipients_features = np.array(np.load("num_recipients_features_nodup.npy"))
+
+  avgNumRecipients = np.array(np.load("avg_num_recipients.npy"))
+  avgNumTokensPerEmail = np.array(np.load("avg_num_tokens_per_email.npy"))
 
   dataset = StanfordSentiment()
   tokens = dataset.tokens()
@@ -88,10 +91,25 @@ def get_glove_data():
     if sentenceFeatures is None:
       toRemove.append(i)
     else:
-      featureVector = np.hstack((sentenceFeatures, num_recipients_features[i]))
+      featureVector = np.hstack((sentenceFeatures, avgNumRecipients[i]))
+      num_words = avgNumTokensPerEmail[i]
+      #place number of words in buckets
+      if num_words < 10:
+        num_words_bucket = 0
+      elif num_words >= 10 and num_words < 100:
+        num_words_bucket = 1
+      elif num_words >= 100 and num_words < 500:
+        num_words_bucket = 2
+      elif num_words >= 500 and num_words < 1000:
+        num_words_bucket = 3
+      elif num_words >= 1000 and num_words < 2000:
+        num_words_bucket = 4
+      elif num_words >= 2000:
+        num_words_bucket = 5
       featureVector = np.hstack((featureVector, num_words_bucket))
       trainFeatures[i, :] = featureVector
 
+  print(len(toRemove))
   y = np.delete(y, toRemove, axis=0)
   trainFeatures = np.delete(trainFeatures, toRemove, axis=0)
 
@@ -116,8 +134,6 @@ def get_count_data():
   # Load data
   x_text, y = load_data_and_labels_bow("email_contents.npy", "labels.npy")
 
-  # Reminder: dominant sender, subordinate recipient equals label 0
-
   # Build vocabulary
   max_email_length = max([len(x.split(" ")) for x in x_text])
   # Function that maps each email to sequences of word ids. Shorter emails will be padded.
@@ -131,11 +147,18 @@ def get_count_data():
   x_shuffled = x[shuffle_indices]
   y_shuffled = y[shuffle_indices]
 
-  train = 0.7
-  dev = 0.3
-  return train_test_split(x_shuffled, y_shuffled, test_size=0.3, random_state=42)
+  train = 0.6
+  dev = 0.2
+  test = 0.2
+  # train x, dev x, test x, train y, dev y, test y
+  train_cutoff = int(0.6 * len(x_shuffled))
+  dev_cutoff = int(0.8 * len(x_shuffled))
+  test_cutoff = int(len(x_shuffled))
+  return x_shuffled[0:train_cutoff], x_shuffled[train_cutoff:dev_cutoff], x_shuffled[dev_cutoff:test_cutoff], \
+         y_shuffled[0:train_cutoff], y_shuffled[train_cutoff:dev_cutoff], y_shuffled[dev_cutoff:test_cutoff],
 
-train_X, dev_X, test_X, train_y, dev_y, test_y = get_glove_data()
+
+train_X, dev_X, test_X, train_y, dev_y, test_y = get_count_data()
 
 # Parameters
 RANDOM_SEED = 42
@@ -180,35 +203,35 @@ biases = {
 def double_perceptron(x, weights, biases):
     # Hidden layer with RELU activation
     layer_1 = tf.add(tf.matmul(x, weights['w1']), biases['b1'])
-    layer_1 = tf.nn.softmax(layer_1)
+    layer_1 = tf.nn.tanh(layer_1)
     # Create a summary to visualize the first layer ReLU activation
-    tf.summary.histogram("sigmoid1", layer_1)
+    tf.summary.histogram("tanh1", layer_1)
     # Output layer
     out_layer = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
     return out_layer
 
-# Store layers weight & bias
-weights = {
-    'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
-    'w2': tf.Variable(tf.random_normal([n_hidden_1, n_classes]), name='W2')
-}
-biases = {
-    'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
-    'b2': tf.Variable(tf.random_normal([n_classes]), name='b2')
-}
+# # Store layers weight & bias
+# weights = {
+#     'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
+#     'w2': tf.Variable(tf.random_normal([n_hidden_1, n_classes]), name='W2')
+# }
+# biases = {
+#     'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
+#     'b2': tf.Variable(tf.random_normal([n_classes]), name='b2')
+# }
 
 # Create model
 def triple_perceptron(x, weights, biases):
     # Hidden layer with RELU activation
     layer_1 = tf.add(tf.matmul(x, weights['w1']), biases['b1'])
-    layer_1 = tf.nn.sigmoid(layer_1)
+    layer_1 = tf.nn.tanh(layer_1)
     # Create a summary to visualize the first layer softmax activation
-    tf.summary.histogram("softmax1", layer_1)
+    tf.summary.histogram("tanh1", layer_1)
 
     layer_2 = tf.add(tf.matmul(layer_1, weights['w2']), biases['b2'])
-    layer_2 = tf.nn.sigmoid(layer_2)
+    layer_2 = tf.nn.tanh(layer_2)
     # Create a summary to visualize the first layer softmax activation
-    tf.summary.histogram("relu2", layer_2)
+    tf.summary.histogram("tanh12", layer_2)
 
     # Output layer
     out_layer = tf.add(tf.matmul(layer_2, weights['w3']), biases['b3'])

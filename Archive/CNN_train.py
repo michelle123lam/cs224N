@@ -10,19 +10,18 @@ from text_cnn import TextCNN
 from tensorflow.contrib import learn
 from sklearn.model_selection import train_test_split
 from processData import batch_iter, load_data_and_labels, load_data_and_labels_thread, load_embedding_vectors_word2vec, load_embedding_vectors_glove
-from utils.treebank import StanfordSentiment
-import utils.glove as glove
 import yaml
 import nltk
-nltk.download('punkt')
-nltk.download('maxent_ne_chunker')
-nltk.download('words')
-nltk.download('averaged_perceptron_tagger')
+# nltk.download('punkt')
+# nltk.download('maxent_ne_chunker')
+# nltk.download('words')
+# nltk.download('averaged_perceptron_tagger')
 
 # Parameters
 # ==================================================
 # Model Hyperparameters
 tf.flags.DEFINE_boolean("enable_word_embeddings", True, "Enable/disable the word embedding (default: True)")
+tf.flags.DEFINE_boolean("non_lexical_features", False, "Include non-lexical features (default: False)")
 tf.flags.DEFINE_integer("embedding_dim", 50, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
@@ -30,14 +29,16 @@ tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (defau
 tf.flags.DEFINE_integer("l2_reg_lambda", 0, "L2 regularization lambda (default: 0.0)")
 
 # Training parameters
-tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-tf.flags.DEFINE_integer("num_epochs", 30, "Number of training epochs (default: 200)")
+tf.flags.DEFINE_integer("batch_size", 5, "Batch Size (default: 64)")
+tf.flags.DEFINE_integer("num_epochs", 10, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+
+NUM_NONLEXICAL = 0
 
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
@@ -57,13 +58,12 @@ else:
 
 def extract_entity_names(t):
   entity_names = []
-
   if hasattr(t, 'label') and t.label:
-      if t.label() == 'NE':
-          entity_names.append(' '.join([child[0] for child in t]))
-      else:
-          for child in t:
-              entity_names.extend(extract_entity_names(child))
+    if t.label() == 'NE':
+        entity_names.append(' '.join([child[0] for child in t]))
+    else:
+        for child in t:
+            entity_names.extend(extract_entity_names(child))
 
   return entity_names
 
@@ -84,19 +84,21 @@ def get_entity_names(d_emails):
 
 # Email level
 def load_emails():
-    emails, labels = load_data_and_labels("email_contents.npy", "labels.npy")
+    emails, labels = load_data_and_labels("email_contents_grouped.npy", "labels_grouped.npy")
     print "finished loading e-mails"
-    emails = np.array(emails)
-
-    print "getting entity names"
-    entity_names = get_entity_names(emails)
-    print "entity names are"
-    print entity_names
-
     print "The number of e-mails is %d" % len(emails)
+    # Email contents normally is 25,006
+    # Email contents grouped is 3,755
 
-    for entity_name in entity_names:
-        emails = [email.replace(entity_name, "BOB") for email in emails]
+    if FLAGS.non_lexical_features:
+        NUM_NONLEXICAL = 2
+        gender_vec = np.load("gender_features_nodup.npy")
+        num_recipients_vec = np.load("num_recipients_features_nodup.npy")
+        for i, email in enumerate(emails):
+            gender = gender_vec[i]
+            num_recipients = num_recipients_vec[i]
+            non_lexical_features_array = [gender, num_recipients]
+            email = np.concatenate((email.split(" "), non_lexical_features_array))
 
     max_email_length = max([len(email.split(" ")) for email in emails])
     vocab_processor = learn.preprocessing.VocabularyProcessor(max_email_length)
@@ -104,7 +106,6 @@ def load_emails():
 
     print "The max_email_length is %d" % max_email_length
     print "example email: "
-    print emails[1]
 
     # Randomly shuffle data
     np.random.seed(10)
@@ -119,9 +120,21 @@ def load_emails():
 
 # Thread level
 def load_threads():
-    threads, thread_labels = load_data_and_labels_thread("thread_content.npy", "thread_labels.npy")
+    threads, thread_labels, non_lexical_features = load_data_and_labels_thread("thread_content_nodup.npy", "thread_labels_nodup.npy", "non_lexical_features_nodup.npy")
     threads = np.array(threads)
     print "The number of e-mails is %d" % len(threads)
+
+    # if FLAGS.non_lexical_features:
+    #     NUM_NONLEXICAL = 4
+    #     # Non lexical features for each thread
+    #     non_lexical_features = np.array(non_lexical_features)
+    #     print "Non-lexical feature array length is %d" % len(non_lexical_features)
+    #     for i, thread in enumerate(threads):
+    #         recipients, tokens, first_pos, num_messages = non_lexical_features[i]
+    #         avg_recipients = recipients/num_messages
+    #         tokens_per_message = tokens/num_messages
+    #         non_lexical_feature_array = [avg_recipients, tokens_per_message, first_pos, num_messages]  
+    #         thread = np.concatenate((thread.split(" "), non_lexical_feature_array))
 
     max_thread_length = max([len(thread.split(" ")) for thread in threads])
     vocab_processor = learn.preprocessing.VocabularyProcessor(max_thread_length)
@@ -129,7 +142,6 @@ def load_threads():
 
     print "The max_thread_length is %d" % max_thread_length
     print "example thread: "
-    print threads[1]
 
     # Randomly shuffle data
     np.random.seed(10)
@@ -224,7 +236,7 @@ def train_tensorflow(x_train, x_test, y_train, y_test, vocab_processor):
                                                                   cfg['word_embeddings']['glove']['path'],
                                                                   embedding_dimension)
                 print("glove file has been loaded\n")
-                
+
             sess.run(cnn.E.assign(initEmbedding))
 
         def train_step(x_batch, y_batch):
@@ -270,6 +282,12 @@ def train_tensorflow(x_train, x_test, y_train, y_test, vocab_processor):
         x_train_batch, y_train_batch = zip(*train_batch)
         train_step(x_train_batch, y_train_batch)
         current_step = tf.train.global_step(sess, global_step)
+        # if current_step == 1000:
+        #     # Test on Arun's data after 10 epochs.
+        #     x_dev_batch = generateVinodTrain()
+        #     y_dev_batch = generateVinodTest()
+        #     dev_step(x_dev_batch, y_dev_batch, writer=dev_summary_writer)
+            # break
         if current_step % FLAGS.evaluate_every == 0:
             print("\nEvaluation:")
             x_dev_batch, y_dev_batch = zip(*dev_batch)
@@ -278,6 +296,10 @@ def train_tensorflow(x_train, x_test, y_train, y_test, vocab_processor):
         if current_step % FLAGS.checkpoint_every == 0:
             path = saver.save(sess, checkpoint_prefix, global_step=current_step)
             print("Saved model checkpoint to {}\n".format(path))
+
+
+
+# def generateVinodTest():
 
 def main():
   args = process_command_line()
