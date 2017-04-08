@@ -157,7 +157,7 @@ def get_power_labels_and_indices_grouped(d_emails):
     if "subject" in email:
       content += email["subject"]
     if "body" in email:
-      content += email["body"]
+      content += " " + email["body"]
     content = content.encode('utf-8').replace('\n', '')
 
     # Generate features for each recipient of email
@@ -243,7 +243,7 @@ def get_power_labels_and_indices(d_emails):
       if "subject" in email:
         content += email["subject"]
       if "body" in email:
-        content += email["body"]
+        content +=  " " + email["body"]
 
       content = content.encode('utf-8').replace('\n', '')
       # dominant sender, subordinate recipient = label 0
