@@ -82,13 +82,13 @@ def get_power_labels_and_indices_thread(d_threads, d_emails):
       # check valid text content
       if "subject" not in email and "body" not in email:
         continue
-    
+
       # Prepare content of the email
       content = ""
       if "subject" in email:
         content += email["subject"]
       if "body" in email:
-        content += email["body"]
+        content += " " + email["body"]
       content = content.encode('utf-8').replace('\n', '')
 
       # Generate features for each recipient of email

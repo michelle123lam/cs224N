@@ -97,7 +97,7 @@ def clean_str(string):
      string = re.sub(r"\)", " \) ", string)
      string = re.sub(r"\?", " \? ", string)
      string = re.sub(r"\s{2,}", " ", string)
-     return string.strip().lower()
+     return string.strip() #.lower()
 
 def load_data_and_labels_bow(email_contents_file, labels_file):
     """
