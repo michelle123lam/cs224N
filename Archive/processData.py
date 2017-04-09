@@ -100,35 +100,6 @@ def clean_str(string):
      string = re.sub(r"\s{2,}", " ", string)
      return string.strip() #.lower()
 
-def replace_names(string):
-    all_email_names_array = []
-    client = MongoClient()
-    db = client.enron
-    all_results = db.entities.find({}, {"email_names": 1})
-    for result in all_results:
-        if "email_names" not in result:
-            continue
-        email_names = result["email_names"]
-        for email_name in email_names:
-            if email_name is None:
-                continue
-            else:
-                splits = email_name.split()
-                for split in splits:
-                    all_email_names_array.append(split)
-    all_email_names_set = set(all_email_names_array)
-
-    # not verified
-    new_string = []
-    for word in string:
-        if word in all_email_names_set:
-            new_string.append("<NAME>")
-        else:
-            new_string.append(word)
-    print new_string
-    return new_string
-
-
 def load_data_and_labels_bow(email_contents_file, labels_file):
     """
     Splits the data into words and generates labels.

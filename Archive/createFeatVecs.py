@@ -14,11 +14,38 @@ from random import shuffle
 import numpy as np
 from random import randint
 from processData import clean_str
+from pymongo import MongoClient
 
 # Constants and global variables
 CONST_NUM_EMAILS = 276279
 CONST_NUM_THREADS = 36196
 emails_map = {}  # Map from email u_id to the email content
+all_email_names_set = set()
+
+def populate_email_names_set():
+    client = MongoClient()
+    db = client.enron
+    all_results = db.entities.find({}, {"email_names": 1})
+    for result in all_results:
+        if "email_names" not in result:
+            continue
+        email_names = result["email_names"]
+        for email_name in email_names:
+            if email_name is None:
+                continue
+            else:
+                splits = email_name.split()
+                for split in splits:
+                    all_email_names_set.add(split)
+
+def replace_names(string):
+    new_string = []
+    for word in string:
+        if word in all_email_names_set:
+            new_string.append("<NAME>")
+        else:
+            new_string.append(word)
+    return new_string
 
 def get_power_labels_and_indices_thread(d_threads, d_emails):
   """Return power labels for each thread; each thread will be split by the # of interacting partipant pairs"""
@@ -246,6 +273,8 @@ def get_power_labels_and_indices(d_emails):
         content +=  " " + email["body"]
 
       content = content.encode('utf-8').replace('\n', '')
+      content = " ".join(replace_names(content.split()))
+
       # dominant sender, subordinate recipient = label 0
       if (int(sender), int(recipients[j])) in dominance_map:
         potential.append((content, 0, len(recipients), [gender_map.get(str(sender), 0), gender_map.get(str(recipients[j]), 0)]))
@@ -405,6 +434,8 @@ def process_command_line():
 
 def main():
   args = process_command_line()
+
+  populate_email_names_set()
 
   # Generates power labels and indices per thread
   if args.is_thread:
