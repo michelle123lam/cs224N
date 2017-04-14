@@ -22,6 +22,67 @@ CONST_NUM_THREADS = 36196
 emails_map = {}  # Map from email u_id to the email content
 all_email_names_set = set()
 
+stopList = ["i",
+"a",
+"about",
+"an",
+"and",
+"are",
+"as",
+"at",
+"be",
+"by",
+"can",
+"com",
+"day",
+"do",
+"email",
+"for",
+"from",
+"go",
+"hi",
+"how",
+"I",
+"in",
+"is",
+"it",
+"love",
+"now",
+"me",
+"of",
+"off",
+"on",
+"online",
+"or",
+"one",
+"out",
+"Please",
+"so",
+"that",
+"the",
+"this",
+"This",
+"to",
+"want",
+"was",
+"way",
+"we",
+"We",
+"what",
+"when",
+"where",
+"who",
+"will",
+"with",
+"you",
+"You",
+"your",
+"the",
+"The",
+"via",
+"www"
+"|"]
+
 def populate_email_names_set():
     client = MongoClient()
     db = client.enron
@@ -36,6 +97,8 @@ def populate_email_names_set():
             else:
                 splits = email_name.split()
                 for split in splits:
+                    if split in stopList:
+                        continue
                     all_email_names_set.add(split)
 
 def replace_names(string):
