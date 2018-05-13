@@ -41,7 +41,7 @@ def writeSplitJson(old_filename, new_filename, n_per_file):
       i += 1
     print >> g , "}" # Closing bracket
 
-  print "Successfully wrote to %s!" % (new_filename)
+  print("Successfully wrote to %s!" % (new_filename))
 
 
 def writeJson(old_filename, new_filename):
@@ -62,13 +62,13 @@ def writeJson(old_filename, new_filename):
         i += 1
       print >> g , "}" # Closing bracket
 
-  print "Successfully wrote to %s!" % (new_filename)
+  print("Successfully wrote to %s!" % (new_filename))
 
 
 def readJson(filename):
   with open(filename) as data_file:
     data = json.load(data_file)
-    print data["0"]
+    print(data["0"])
 
 
 def process_command_line():
