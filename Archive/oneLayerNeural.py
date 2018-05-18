@@ -51,11 +51,11 @@ def getSentenceFeatures(tokens, wordVectors, sentence):
 
 def get_glove_data():
   embedding_dimension = 100
-  x_text, y = load_data_and_labels_bow("email_contents_grouped.npy", "labels_grouped.npy")
-  num_recipients_features = np.array(np.load("num_recipients_features_nodup.npy"))
-
-  avgNumRecipients = np.array(np.load("avg_num_recipients.npy"))
-  avgNumTokensPerEmail = np.array(np.load("avg_num_tokens_per_email.npy"))
+  x_text, y = load_data_and_labels_bow("thread_content.npy", "thread_labels.npy")
+  # num_recipients_features = np.array(np.load("num_recipients_features_nodup.npy"))
+  #
+  # avgNumRecipients = np.array(np.load("avg_num_recipients.npy"))
+  # avgNumTokensPerEmail = np.array(np.load("avg_num_tokens_per_email.npy"))
 
   dataset = StanfordSentiment()
   tokens = dataset.tokens()
@@ -67,7 +67,7 @@ def get_glove_data():
   print(embedded_vectors.shape) # Should be number of e-mails, number of embeddings
 
   nTrain = len(x_text)
-  trainFeatures = np.zeros((nTrain, embedding_dimension + 2)) #5 is the number of slots the extra features take up
+  trainFeatures = np.zeros((nTrain, embedding_dimension)) #5 is the number of slots the extra features take up
   toRemove = []
   for i in xrange(nTrain):
     words = x_text[i]
@@ -91,22 +91,23 @@ def get_glove_data():
     if sentenceFeatures is None:
       toRemove.append(i)
     else:
-      featureVector = np.hstack((sentenceFeatures, avgNumRecipients[i]))
-      num_words = avgNumTokensPerEmail[i]
+      featureVector = sentenceFeatures
+      #num_words = avgNumTokensPerEmail[i]
       #place number of words in buckets
-      if num_words < 10:
-        num_words_bucket = 0
-      elif num_words >= 10 and num_words < 100:
-        num_words_bucket = 1
-      elif num_words >= 100 and num_words < 500:
-        num_words_bucket = 2
-      elif num_words >= 500 and num_words < 1000:
-        num_words_bucket = 3
-      elif num_words >= 1000 and num_words < 2000:
-        num_words_bucket = 4
-      elif num_words >= 2000:
-        num_words_bucket = 5
-      featureVector = np.hstack((featureVector, num_words_bucket))
+      # if num_words < 10:
+      #   num_words_bucket = 0
+      # elif num_words >= 10 and num_words < 100:
+      #   num_words_bucket = 1
+      # elif num_words >= 100 and num_words < 500:
+      #   num_words_bucket = 2
+      # elif num_words >= 500 and num_words < 1000:
+      #   num_words_bucket = 3
+      # elif num_words >= 1000 and num_words < 2000:
+      #   num_words_bucket = 4
+      # elif num_words >= 2000:
+      #   num_words_bucket = 5
+      # featureVector = np.hstack((featureVector, num_words_bucket))
+      #featureVector = np.hstack((featureVector, avgNumRecipients[i]))
       trainFeatures[i, :] = featureVector
 
   print(len(toRemove))
@@ -132,7 +133,7 @@ def get_glove_data():
 def get_count_data():
 
   # Load data
-  x_text, y = load_data_and_labels_bow("email_contents.npy", "labels.npy")
+  x_text, y = load_data_and_labels_bow("email_contents_nodup.npy", "labels_nodup.npy")
 
   # Build vocabulary
   max_email_length = max([len(x.split(" ")) for x in x_text])
@@ -158,28 +159,125 @@ def get_count_data():
          y_shuffled[0:train_cutoff], y_shuffled[train_cutoff:dev_cutoff], y_shuffled[dev_cutoff:test_cutoff],
 
 
-train_X, dev_X, test_X, train_y, dev_y, test_y = get_count_data()
+def oneLayer():
+    train_X, dev_X, test_X, train_y, dev_y, test_y = get_glove_data()
 
-# Parameters
-RANDOM_SEED = 42
-tf.set_random_seed(RANDOM_SEED)
-learning_rate = 0.01
-training_epochs = 100
-batch_size = 500
-display_step = 1
-evaluate_every = 25
+    # Parameters
+    RANDOM_SEED = 42
+    tf.set_random_seed(RANDOM_SEED)
+    learning_rate = 0.01
+    training_epochs = 100
+    batch_size = 500
+    display_step = 1
+    evaluate_every = 25
 
-# Network Parameters
-n_hidden_1 = 256
-n_hidden_2 = 128
-n_input = train_X.shape[1] # MNIST data input (img shape: 28*28)
-n_classes = train_y.shape[1] # MNIST total classes (0-9 digits)
+    # Network Parameters
+    n_hidden_1 = 256
+    n_hidden_2 = 128
+    n_input = train_X.shape[1] # MNIST data input (img shape: 28*28)
+    n_classes = train_y.shape[1] # MNIST total classes (0-9 digits)
 
-global_step = tf.Variable(0, name="global_step", trainable=False)
-# tf Graph Input
-x = tf.placeholder(tf.float32, [None, n_input], name='X')
-# 0-9 digits recognition => 10 classes
-y = tf.placeholder(tf.float32, [None, n_classes], name='y')
+    global_step = tf.Variable(0, name="global_step", trainable=False)
+    # tf Graph Input
+    x = tf.placeholder(tf.float32, [None, n_input], name='X')
+    # 0-9 digits recognition => 10 classes
+    y = tf.placeholder(tf.float32, [None, n_classes], name='y')
+
+    # Store layers weight & bias
+    weights = {
+        'w1': tf.Variable(tf.random_normal([n_input, n_classes]), name='W1'),
+    }
+    biases = {
+        'b1': tf.Variable(tf.random_normal([n_classes]), name='b1'),
+    }
+
+    pred = single_perceptron(x, weights, biases)
+
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+
+    # Gradient Descent
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+    # Op to calculate every variable gradient
+    grads = tf.gradients(loss, tf.trainable_variables())
+    grads = list(zip(grads, tf.trainable_variables()))
+    # Op to update all variables according to their gradient
+    apply_grads = optimizer.apply_gradients(grads_and_vars=grads, global_step=global_step)
+
+    acc = tf.equal(tf.argmax(pred, axis=1), tf.argmax(y, axis=1))
+    acc = tf.reduce_mean(tf.cast(acc, tf.float32))
+
+    # Initializing the variables
+    init = tf.global_variables_initializer()
+
+    # Launch the graph
+    with tf.Session() as sess:
+        sess.run(init)
+
+        # Output directory for models and summaries
+        timestamp = str(int(time.time()))
+        out_dir = os.path.abspath(os.path.join(os.path.curdir, "oneLayer_runs", timestamp))
+        print("Writing to {}\n".format(out_dir))
+
+        # Create a summary to monitor cost tensor
+        loss_summary = tf.summary.scalar("loss", loss)
+        # Create a summary to monitor accuracy tensor
+        acc_summary = tf.summary.scalar("accuracy", acc)
+
+        # Summarize all gradients
+        grad_summaries = []
+        for g, v in grads:
+            if g is not None:
+                grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
+                sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+                grad_summaries.append(grad_hist_summary)
+                grad_summaries.append(sparsity_summary)
+        grad_summaries_merged = tf.summary.merge(grad_summaries)
+
+        # Train Summaries
+        train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
+        train_summary_dir = os.path.join(out_dir, "summaries", "train")
+        train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
+
+        # # Dev summaries
+        dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
+        dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
+        dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
+
+        # Generate batches
+        train_batches = batch_iter(
+            list(zip(train_X, train_y)), batch_size, training_epochs)
+        dev_batches = batch_iter(
+            list(zip(test_X, test_y)), batch_size, training_epochs)
+
+        # Training cycle
+        for train_batch, dev_batch in zip(train_batches, dev_batches):
+            x_train_batch, y_train_batch = zip(*train_batch)
+            _, step, summaries, loss_1, accuracy = sess.run([apply_grads, global_step, train_summary_op, loss, acc],
+                                         feed_dict={x: x_train_batch, y: y_train_batch})
+            time_str = datetime.datetime.now().isoformat()
+            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
+            train_summary_writer.add_summary(summaries, step)
+            train_summary_writer.flush()
+
+            current_step = tf.train.global_step(sess, global_step)
+            if current_step % evaluate_every == 0:
+                print("\nEvaluation:")
+                x_dev_batch, y_dev_batch = zip(*dev_batch)
+                step, summaries, y_pred, loss_1, accuracy = sess.run([global_step, dev_summary_op, pred, loss, acc],
+                                         feed_dict={x: x_dev_batch, y: y_dev_batch})
+                time_str = datetime.datetime.now().isoformat()
+                print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
+                dev_summary_writer.add_summary(summaries, step)
+                dev_summary_writer.flush()
+                print("")
+
+                # Report precision, recall, F1
+                print("Precision: {}%".format(100*metrics.precision_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
+                print("Recall: {}%".format(100*metrics.recall_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
+                print("f1_score: {}%".format(100*metrics.f1_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
+
+        train_summary_writer.close()
+        dev_summary_writer.close()
 
 # Create model
 def single_perceptron(x, weights, biases):
@@ -190,14 +288,6 @@ def single_perceptron(x, weights, biases):
     tf.summary.histogram("out", layer_1)
     # Output layer
     return out_layer
-
-# Store layers weight & bias
-weights = {
-    'w1': tf.Variable(tf.random_normal([n_input, n_classes]), name='W1'),
-}
-biases = {
-    'b1': tf.Variable(tf.random_normal([n_classes]), name='b1'),
-}
 
 # Create model
 def double_perceptron(x, weights, biases):
@@ -238,103 +328,16 @@ def triple_perceptron(x, weights, biases):
     return out_layer
 
 # Store layers weight & bias
-weights = {
-    'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
-    'w2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2]), name='W2'),
-    'w3': tf.Variable(tf.random_normal([n_hidden_2, n_classes]), name='W3'),
-}
-biases = {
-    'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
-    'b2': tf.Variable(tf.random_normal([n_hidden_2]), name='b2'),
-    'b3': tf.Variable(tf.random_normal([n_classes]), name='b3'),
-}
+# weights = {
+#     'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
+#     'w2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2]), name='W2'),
+#     'w3': tf.Variable(tf.random_normal([n_hidden_2, n_classes]), name='W3'),
+# }
+# biases = {
+#     'b1': tf.Variable(tf.random_normal([n_hidden_1]), name='b1'),
+#     'b2': tf.Variable(tf.random_normal([n_hidden_2]), name='b2'),
+#     'b3': tf.Variable(tf.random_normal([n_classes]), name='b3'),
+# }
 
 # Encapsulating all ops into scopes, making Tensorboard's Graph
 # Visualization more convenient
-pred = triple_perceptron(x, weights, biases)
-
-loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(pred, y))
-
-# Gradient Descent
-optimizer = tf.train.GradientDescentOptimizer(learning_rate)
-# Op to calculate every variable gradient
-grads = tf.gradients(loss, tf.trainable_variables())
-grads = list(zip(grads, tf.trainable_variables()))
-# Op to update all variables according to their gradient
-apply_grads = optimizer.apply_gradients(grads_and_vars=grads, global_step=global_step)
-
-acc = tf.equal(tf.argmax(pred, axis=1), tf.argmax(y, axis=1))
-acc = tf.reduce_mean(tf.cast(acc, tf.float32))
-
-# Initializing the variables
-init = tf.global_variables_initializer()
-
-# Launch the graph
-with tf.Session() as sess:
-    sess.run(init)
-
-    # Output directory for models and summaries
-    timestamp = str(int(time.time()))
-    out_dir = os.path.abspath(os.path.join(os.path.curdir, "oneLayer_runs", timestamp))
-    print("Writing to {}\n".format(out_dir))
-
-    # Create a summary to monitor cost tensor
-    loss_summary = tf.summary.scalar("loss", loss)
-    # Create a summary to monitor accuracy tensor
-    acc_summary = tf.summary.scalar("accuracy", acc)
-
-    # Summarize all gradients
-    grad_summaries = []
-    for g, v in grads:
-        if g is not None:
-            grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
-            sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
-            grad_summaries.append(grad_hist_summary)
-            grad_summaries.append(sparsity_summary)
-    grad_summaries_merged = tf.summary.merge(grad_summaries)
-
-    # Train Summaries
-    train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
-    train_summary_dir = os.path.join(out_dir, "summaries", "train")
-    train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
-
-    # # Dev summaries
-    dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
-    dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
-    dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
-
-    # Generate batches
-    train_batches = batch_iter(
-        list(zip(train_X, train_y)), batch_size, training_epochs)
-    dev_batches = batch_iter(
-        list(zip(test_X, test_y)), batch_size, training_epochs)
-
-    # Training cycle
-    for train_batch, dev_batch in zip(train_batches, dev_batches):
-        x_train_batch, y_train_batch = zip(*train_batch)
-        _, step, summaries, loss_1, accuracy = sess.run([apply_grads, global_step, train_summary_op, loss, acc],
-                                     feed_dict={x: x_train_batch, y: y_train_batch})
-        time_str = datetime.datetime.now().isoformat()
-        print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
-        train_summary_writer.add_summary(summaries, step)
-        train_summary_writer.flush()
-
-        current_step = tf.train.global_step(sess, global_step)
-        if current_step % evaluate_every == 0:
-            print("\nEvaluation:")
-            x_dev_batch, y_dev_batch = zip(*dev_batch)
-            step, summaries, y_pred, loss_1, accuracy = sess.run([global_step, dev_summary_op, pred, loss, acc],
-                                     feed_dict={x: x_dev_batch, y: y_dev_batch})
-            time_str = datetime.datetime.now().isoformat()
-            print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss_1, accuracy))
-            dev_summary_writer.add_summary(summaries, step)
-            dev_summary_writer.flush()
-            print("")
-
-            # Report precision, recall, F1
-            print("Precision: {}%".format(100*metrics.precision_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
-            print("Recall: {}%".format(100*metrics.recall_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
-            print("f1_score: {}%".format(100*metrics.f1_score(np.argmax(y_dev_batch, axis=1), np.argmax(y_pred, axis=1), average="weighted")))
-
-    train_summary_writer.close()
-    dev_summary_writer.close()
