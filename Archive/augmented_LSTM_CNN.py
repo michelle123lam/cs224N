@@ -16,8 +16,10 @@ Run Approach 1 LSTM:
 import argparse
 import numpy as np
 import pickle
-from keras.models import Sequential
-from keras.layers import Merge, Activation, Dense
+from keras.models import Sequential, Model
+from keras.layers import Embedding, Input
+from keras.layers.core import Dense
+from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 from nltk import tokenize
 
@@ -93,21 +95,21 @@ def AugLSTM1_full(data, output_dim=20, dropout=0.8, batch_size=30, num_epochs=10
 	input_shape=(max_email_words, word_vec_dim)
 
 	# Create LSTMs
-	LSTM_a = Sequential()
-	LSTM_a.add(LSTM(output_dim, input_shape=input_shape, dropout=dropout))
-	LSTM_b = Sequential()
-	LSTM_b.add(LSTM(output_dim, input_shape=input_shape, dropout=dropout))
+	input_a = Input(shape=input_shape, dtype='float32')
+	LSTM_a = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_a)
+	
+	input_b = Input(shape=input_shape, dtype='float32')
+	LSTM_b = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_b)
 
 	# Merge non-lexical features
 	# TODO: get non-lexical features
 
 	# Merge LSTMs
-	merged_model = Sequential()
-	merged_model.add(Merge([LSTM_a, LSTM_b], mode='concat'))
-
+	merged = concatenate([LSTM_a, LSTM_b])
+	
 	# Softmax classification
-	merged_model.add(Dense(1, activation='softmax'))
-		# merged_model.add(Activation('softmax'))
+	dense_out = Dense(1, activation='softmax')(merged)
+	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print "Compiled merged_model!"
 
