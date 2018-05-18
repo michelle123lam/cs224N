@@ -5,6 +5,13 @@ Approach 1:
 Separate A's emails and B's emails
 LSTM on each party's emails
 Non-lex features combined with LSTM and merged to get final classification
+
+Commands:
+Generate Approach 1 data: 
+	python ./augmented_LSTM_CNN.py --prepareData=True --approach=1
+
+Run Approach 1 LSTM:
+	python ./augmented_LSTM_CNN.py --approach=1 --model=LSTM
 """
 import argparse
 import numpy as np
@@ -131,10 +138,12 @@ Process data for Approach 1
 split_data dict --> 
 	keys: ['train' | 'dev' | 'test'] --> 
 		keys: ['x' | 'y'] --> 
-			tuple of (a_value, b_value)
+			arr of [a_value, b_value]
 """
 def processData1(raw_x_file, raw_y_file, pkl_file):
 	data = {}
+	data['x'] = []
+	data['y'] = []
 
 	# Load txt file
 	with open(raw_x_file, 'r') as f:
@@ -148,15 +157,15 @@ def processData1(raw_x_file, raw_y_file, pkl_file):
 	for pair_i in range(n_pairs):
 		a_ind = pair_i * 2
 		b_ind = a_ind + 1
-		data['x'].append((raw_x[a_ind], raw_x[b_ind]))
-		data['y'].append((raw_y[a_ind], raw_y[b_ind]))
+		data['x'].append([raw_x[a_ind], raw_x[b_ind]])
+		data['y'].append([raw_y[a_ind], raw_y[b_ind]])
 	print "Read in data!"
 
 	# Shuffle data
 	np.random.seed(10)
 	shuffle_indices = np.random.permutation(np.arange(n_pairs))
-	data['x'] = data['x'][shuffle_indices]
-	data['y'] = data['y'][shuffle_indices]
+	data['x'] = [data['x'][i] for i in shuffle_indices]
+	data['y'] = [data['y'][i] for i in shuffle_indices]
 	print "Shuffled data!"
 
 	# Split into train/dev/test
@@ -167,16 +176,20 @@ def processData1(raw_x_file, raw_y_file, pkl_file):
 	dev_cutoff = int(0.8 * n_pairs)
 	test_cutoff = n_pairs
 
-	split_data = {}
-	split_data['train']['x'] = data['x'][0:train_cutoff]
-	split_data['dev']['x'] = data['x'][train_cutoff:dev_cutoff]
-	split_data['test']['x'] = data['x'][dev_cutoff:test_cutoff]
-	split_data['train']['y'] = data['y'][0:train_cutoff]
-	split_data['dev']['y'] = data['y'][train_cutoff:dev_cutoff]
-	split_data['test']['y'] = data['y'][dev_cutoff:test_cutoff]
+	split_data = {
+		'train': {},
+		'dev': {},
+		'test': {},
+	}
+	split_data['train']['x'] = [data['x'][i] for i in range(train_cutoff)]
+	split_data['dev']['x'] = [data['x'][i] for i in range(train_cutoff, dev_cutoff)]
+	split_data['test']['x'] = [data['x'][i] for i in range(dev_cutoff, test_cutoff)]
+	split_data['train']['y'] = [data['y'][i] for i in range(train_cutoff)]
+	split_data['dev']['y'] = [data['y'][i] for i in range(train_cutoff, dev_cutoff)]
+	split_data['test']['y'] = [data['y'][i] for i in range(dev_cutoff, test_cutoff)]
 	print "Split data!"
 
-	# TODO: save shuffled and split data to pickle
+	# Save shuffled and split data to pickle
 	with open(pkl_file, 'wb') as f:
 		pickle.dump(split_data, f)
 	print "Saved data!"
@@ -198,21 +211,23 @@ def main(args):
 
 	else:
 		# Run model
-		# with open(pkl_file, 'rb') as f:
-		#     data = pickle.load(f)
+		with open(pkl_file, 'rb') as f:
+		    data = pickle.load(f)
 
 	    # Approach 1
 		if args.approach == 1:
 			if args.model == 'LSTM':
-				print "Running Approach 1 LSTM!"
+				print "data:", data
+				# print "Running Approach 1 LSTM!"
 				# AugLSTM1_full(data,
 				# 	batch_size=5,
 				# 	num_epochs=3)
+
 			elif args.model == 'CNN':
 				print "Running Approach 1 CNN!"
-				# AugCNN1_full(data,
-				# 	batch_size=5,
-				# 	num_epochs=3)
+				AugCNN1_full(data,
+					batch_size=5,
+					num_epochs=3)
 
 		# Approach 2
 		elif args.approach == 2:
@@ -223,9 +238,9 @@ def main(args):
 if __name__ == "__main__":
 	# Prepare command line flags
 	parser = argparse.ArgumentParser(description='Run augmented LSTM or CNN models')
-	parser.add_argument('--prepareData', type=bool, default=False, help='prepare data for the model')
-	parser.add_argument('--approach', type=int, default=1, help="which number approach to use")
-	parser.add_argument('--model', type=str, default='LSTM', help="which model to use")
+	parser.add_argument('--prepareData', type=bool, default=False, help='prepare data for the model (default=False)')
+	parser.add_argument('--approach', type=int, default=1, help="which number approach to use (default=1)")
+	parser.add_argument('--model', type=str, default='LSTM', help="which model to use (default=LSTM)")
 
 	args = parser.parse_args()
 	main(args)
