@@ -24,75 +24,8 @@ from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 from nltk import tokenize
 
-"""
-def getPreds(merged_a, merged_b, data, batch_size, num_epochs):
-	# TODO
-	# merge a and b models
-	merged_model = Sequential()
-	merged_model.add(Merge([merged_a, merged_b], mode='concat'))
-
-	# softmax classification
-	merged_model.add(Dense(1, activation='softmax'))
-	# merged_model.add(Activation('softmax'))
-	merged_model.compile(optimizer='adam', loss='binary_crossentropy')
-	merged_model.fit(data['train']['x'], data['train']['y'],
-		batch_size=batch_size,
-		epochs=num_epochs,
-		validation_data=(data['dev']['x'], data['dev']['y']))
-	return merged_model
-
-def getNonLexicalFeats(feats_raw):
-	# TODO
-
-def getLSTM(emails, max_email_len, dropout=0.8):
-	# TODO
-	# Take in email text
-	n_emails = len(emails)
-	email_len = max_email_len
-	output_dim = 20
-
-	model = Sequential()
-	model.add(LSTM(output_dim, input_shape=(n_emails, email_len), dropout=droput))
-	return model
-
-	# EXAMPLE:
-	# first_model = Sequential()
-	# first_model.add(LSTM(output_dim, input_shape=(m, input_dim)))
-
-	# second_model = Sequential()
-	# second_model.add(LSTM(output_dim, input_shape=(n-m, input_dim)))
-
-	# model = Sequential()
-	# model.add(Merge([first_model, second_model], mode='concat'))
-	# model.add(Dense(1))
-	# model.add(Activation('sigmoid'))
-	# model.compile(optimizer='RMSprop', loss='binary_crossentropy')
-	# model.fit([X[:,:m,:], X[:,m:,:]], y)
-
-
-def AugLSTM1_decomposed(a_data, b_data):
-	# TODO: get a_emails, b_emails (pad sequences to max_email_len); get a_feats, b_feats
-	max_email_len = # TODO
-	LSTM_a = getLSTM(a_emails, max_email_len)
-	LSTM_b = getLSTM(b_emails, max_email_len)
-
-	nonLex_a = getNonLexicalFeats(a_feats)
-	nonLex_b = getNonLexicalFeats(b_feats)
-
-	merged_a = # concatenate LSTM_a and nonLex_a
-	merged_b = # concatenate LSTM_b and nonLex_b
-
-	data = # train/dev/test data; format = data['train']['x'] etc.
-	batch_size = # TODO
-	num_epochs = # TODO
-
-	final_model = getPreds(merged_a, merged_b, data, batch_size, num_epochs)
-
-	score, acc = final_model.evaluate(data['dev']['x'], data['dev']['x'], batch_size=batch_size)
-"""
-
 # AugLSTM: Approach 1
-def AugLSTM1_full(data, output_dim=20, dropout=0.8, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
+def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
 	input_shape=(max_email_words, word_vec_dim)
 
 	# Create LSTMs
@@ -109,7 +42,7 @@ def AugLSTM1_full(data, output_dim=20, dropout=0.8, batch_size=30, num_epochs=10
 	merged = concatenate([LSTM_a, LSTM_b])
 	
 	# Softmax classification
-	dense_out = Dense(1, activation='softmax')(merged)
+	dense_out = Dense(1, activation='sigmoid')(merged)
 	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print "Compiled merged_model!"
@@ -230,7 +163,8 @@ def get_vectorized_email(email, wordVectors, max_email_words=50, word_vec_dim=10
 	# print "words:", words
 	words = words[:max_email_words]
 	wv = np.array([wordVectors[word] for word in words if word in wordVectors])
-	result[:wv.shape[0], :wv.shape[1]] = wv
+	if (wv.shape[0] > 0):
+		result[:wv.shape[0], :wv.shape[1]] = wv
 	return result
 
 
@@ -249,7 +183,7 @@ split_data dict -->
 
 x_values are a list of up to [max_email_words] word vectors (each 100 dimensions)
 """
-def processData1(raw_x_file, raw_y_file, pkl_file):
+def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 	data = {}
 	data['x'] = []
 	data['y'] = []
@@ -264,22 +198,27 @@ def processData1(raw_x_file, raw_y_file, pkl_file):
 			wordVectors[word] = coefs
 	print "Loaded GloVe!"
 
+	# Load npy file
+	raw_xa = np.load(raw_xa_file)
+	raw_xb = np.load(raw_xb_file)
+	raw_y = np.load(raw_y_file)
+
+	"""
 	# Load txt file
 	with open(raw_x_file, 'r') as f:
 		raw_x = f.readlines()
 	with open(raw_y_file, 'r') as f:
 		raw_y = f.readlines()
+	"""
 
 	# Separate A's and B's emails for each pairing
-	n_pairs = len(raw_x) / 2
+	n_pairs = len(raw_xa)
 
 	for pair_i in range(n_pairs):
-		a_ind = pair_i * 2
-		b_ind = a_ind + 1
-		a_email = get_vectorized_email(raw_x[a_ind], wordVectors)
-		b_email = get_vectorized_email(raw_x[b_ind], wordVectors)
+		a_email = get_vectorized_email(raw_xa[pair_i], wordVectors)
+		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors)
 		data['x'].append([a_email, b_email])
-		data['y'].append([raw_y[a_ind]])
+		data['y'].append([raw_y[pair_i]])
 	print "Read in data!"
 
 	# Shuffle data
@@ -320,16 +259,17 @@ def processData1(raw_x_file, raw_y_file, pkl_file):
 
 def main(args):
 	# TODO: update to true data file
-	raw_x_file = 'aug_data/grouped_test_x.txt'
-	raw_y_file = 'aug_data/grouped_test_y.txt'
-	pkl_file = 'aug_data/grouped_test.pkl'
+	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+	pkl_file = 'aug_data/approach1/grouped.pkl'
 
 	# Prepare train/dev/test data
 	if args.prepareData:
 		# Approach 1 data
 		if args.approach == 1:
 			print "Preparing Approach 1 data!"
-			data = processData1(raw_x_file, raw_y_file, pkl_file)
+			data = processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file)
 
 		# Approach 2 data
 		elif args.approach == 2:
@@ -358,7 +298,7 @@ def main(args):
 				print "devX shape:", np.shape(data['dev']['x'])
 				print "sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:])
 				AugLSTM1_full(data,
-					batch_size=2,
+					batch_size=30,
 					num_epochs=10)
 
 			elif args.model == 'CNN':
