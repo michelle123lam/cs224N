@@ -16,109 +16,128 @@ Run Approach 1 LSTM:
 import argparse
 import numpy as np
 import pickle
-from keras.models import Sequential
-from keras.layers import Merge, Activation, Dense
+from keras.models import Sequential, Model
+from keras.layers import Embedding, Input, Conv1D, Conv2D, MaxPool2D, MaxPooling1D, GlobalMaxPooling1D
+from keras.layers import Flatten, Dropout
+from keras.layers.core import Dense
+from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 from nltk import tokenize
 
-"""
-def getPreds(merged_a, merged_b, data, batch_size, num_epochs):
-	# TODO
-	# merge a and b models
-	merged_model = Sequential()
-	merged_model.add(Merge([merged_a, merged_b], mode='concat'))
-
-	# softmax classification
-	merged_model.add(Dense(1, activation='softmax'))
-	# merged_model.add(Activation('softmax'))
-	merged_model.compile(optimizer='adam', loss='binary_crossentropy')
-	merged_model.fit(data['train']['x'], data['train']['y'],
-		batch_size=batch_size,
-		epochs=num_epochs,
-		validation_data=(data['dev']['x'], data['dev']['y']))
-	return merged_model
-
-def getNonLexicalFeats(feats_raw):
-	# TODO
-
-def getLSTM(emails, max_email_len, dropout=0.8):
-	# TODO
-	# Take in email text
-	n_emails = len(emails)
-	email_len = max_email_len
-	output_dim = 20
-
-	model = Sequential()
-	model.add(LSTM(output_dim, input_shape=(n_emails, email_len), dropout=droput))
-	return model
-
-	# EXAMPLE:
-	# first_model = Sequential()
-	# first_model.add(LSTM(output_dim, input_shape=(m, input_dim)))
-
-	# second_model = Sequential()
-	# second_model.add(LSTM(output_dim, input_shape=(n-m, input_dim)))
-
-	# model = Sequential()
-	# model.add(Merge([first_model, second_model], mode='concat'))
-	# model.add(Dense(1))
-	# model.add(Activation('sigmoid'))
-	# model.compile(optimizer='RMSprop', loss='binary_crossentropy')
-	# model.fit([X[:,:m,:], X[:,m:,:]], y)
-
-
-def AugLSTM1_decomposed(a_data, b_data):
-	# TODO: get a_emails, b_emails (pad sequences to max_email_len); get a_feats, b_feats
-	max_email_len = # TODO
-	LSTM_a = getLSTM(a_emails, max_email_len)
-	LSTM_b = getLSTM(b_emails, max_email_len)
-
-	nonLex_a = getNonLexicalFeats(a_feats)
-	nonLex_b = getNonLexicalFeats(b_feats)
-
-	merged_a = # concatenate LSTM_a and nonLex_a
-	merged_b = # concatenate LSTM_b and nonLex_b
-
-	data = # train/dev/test data; format = data['train']['x'] etc.
-	batch_size = # TODO
-	num_epochs = # TODO
-
-	final_model = getPreds(merged_a, merged_b, data, batch_size, num_epochs)
-
-	score, acc = final_model.evaluate(data['dev']['x'], data['dev']['x'], batch_size=batch_size)
-"""
-
 # AugLSTM: Approach 1
-def AugLSTM1_full(data, output_dim=20, dropout=0.8, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
+def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
 	input_shape=(max_email_words, word_vec_dim)
 
 	# Create LSTMs
-	LSTM_a = Sequential()
-	LSTM_a.add(LSTM(output_dim, input_shape=input_shape, dropout=dropout))
-	LSTM_b = Sequential()
-	LSTM_b.add(LSTM(output_dim, input_shape=input_shape, dropout=dropout))
+	input_a = Input(shape=input_shape, dtype='float32')
+	LSTM_a = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_a)
+
+	input_b = Input(shape=input_shape, dtype='float32')
+	LSTM_b = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_b)
 
 	# Merge non-lexical features
 	# TODO: get non-lexical features
 
 	# Merge LSTMs
-	merged_model = Sequential()
-	merged_model.add(Merge([LSTM_a, LSTM_b], mode='concat'))
-
+	merged = concatenate([LSTM_a, LSTM_b])
+	
 	# Softmax classification
-	merged_model.add(Dense(1, activation='softmax'))
-		# merged_model.add(Activation('softmax'))
+	dense_out = Dense(1, activation='sigmoid')(merged)
+	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print "Compiled merged_model!"
 
 	# Fit model
 	merged_model.fit(
-		[np.array(data['train']['x'])[:,0,:,:], np.array(data['train']['x'])[:,1,:,:]], 
+		[np.array(data['train']['x'])[:,0,:,:], 
+		np.array(data['train']['x'])[:,1,:,:]], 
 		np.array(data['train']['y']),
 		batch_size=batch_size,
 		epochs=num_epochs,
 		validation_data=(
-			[np.array(data['dev']['x'])[:,0,:,:], np.array(data['dev']['x'])[:,1,:,:]], 
+			[np.array(data['dev']['x'])[:,0,:,:], 
+			np.array(data['dev']['x'])[:,1,:,:]], 
+			np.array(data['dev']['y'])))
+	print "Fitted merged_model!"
+
+	# Evaluate model
+	score, acc = merged_model.evaluate(
+		[np.array(data['test']['x'])[:,0,:,:], 
+		np.array(data['test']['x'])[:,1,:,:]],
+		np.array(data['test']['y']))
+	print "score:", score, " acc:", acc
+
+
+
+def get_CNN(num_filters, strides, activation, max_email_words, word_vec_dim):
+	input_shape=(max_email_words, word_vec_dim)
+	# input_shape=(max_email_words,)
+	cur_input = Input(shape=input_shape, dtype='float32')
+
+	filter_sizes = [1,2,3] # TODO: change to 3,4,5
+
+	# TODO: continue here!
+	# Check kernel_size
+	# conv = Conv1D(num_filters, kernel_size=5, strides=1, activation=activation)(cur_input)
+	l_cov1= Conv1D(128, 2, activation='relu')(cur_input)
+	l_pool1 = MaxPooling1D(4)(l_cov1)
+	l_cov2 = Conv1D(128, 2, activation='relu')(l_pool1)
+	l_pool2 = MaxPooling1D(2)(l_cov2)
+	l_cov3 = Conv1D(128, 2, activation='relu')(l_pool2)
+	l_pool3 = MaxPooling1D(5)(l_cov3)  # global max pooling
+	flatten = Flatten()(l_pool3)
+	# conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	# conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	# conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+
+	# maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
+	# maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
+	# maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
+
+	# concatenated_tensor = concatenate(axis=1)([maxpool_0, maxpool_1, maxpool_2])
+	# flatten = Flatten()(concatenated_tensor)
+
+	# CNN = Sequential()
+	# CNN.add(Embedding(input_dim=word_vec_dim, output_dim=output_dim, input_length=max_email_words))
+	# CNN.add(Conv2D(output_dim, kernel_size=kernel_size, strides=strides, input_shape=input_shape, activation=activation))
+	# CNN.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+	# CNN.add(Conv2D(64, (5, 5), activation='relu'))
+	# CNN.add(MaxPooling2D(pool_size=(2, 2)))
+	# CNN.add(Flatten())
+	# CNN.add(Dense(1000, activation='relu'))
+	# CNN.add(Dense(num_classes, activation='softmax'))
+	return cur_input, flatten
+
+# AugCNN: Approach 1
+def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100, dropout=0.2):
+	
+	# Create CNNs
+	input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+	input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+
+	# Merge non-lexical features
+	# TODO: get non-lexical features
+
+	# Merge CNNs
+	merged = concatenate([CNN_a, CNN_b])
+	dropout = Dropout(dropout)(merged) # dropout = fraction of input units to drop
+	
+	# Softmax classification
+	dense_out = Dense(1, activation='softmax')(dropout)
+	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
+	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+	print "Compiled merged_model!"
+
+	# Fit model
+	merged_model.fit(
+		[np.array(data['train']['x'])[:,0,:,:], 
+		np.array(data['train']['x'])[:,1,:,:]], 
+		np.array(data['train']['y']),
+		batch_size=batch_size,
+		epochs=num_epochs,
+		validation_data=(
+			[np.array(data['dev']['x'])[:,0,:,:], 
+			np.array(data['dev']['x'])[:,1,:,:]], 
 			np.array(data['dev']['y'])))
 	print "Fitted merged_model!"
 
@@ -129,50 +148,6 @@ def AugLSTM1_full(data, output_dim=20, dropout=0.8, batch_size=30, num_epochs=10
 	print "score:", score, " acc:", acc
 
 
-
-def get_CNN(output_dim, kernel_size, strides, activation, max_email_len, word_vec_dim=100):
-
-	CNN = Sequential()
-	CNN.add(Embedding(input_dim=word_vec_dim, output_dim=output_dim, input_length=max_email_len))
-	CNN.add(Conv2D(output_dim, kernel_size=kernel_size, strides=strides, input_shape=input_shape, activation=activation))
-	CNN.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
-	CNN.add(Conv2D(64, (5, 5), activation='relu'))
-	CNN.add(MaxPooling2D(pool_size=(2, 2)))
-	CNN.add(Flatten())
-	CNN.add(Dense(1000, activation='relu'))
-	CNN.add(Dense(num_classes, activation='softmax'))
-	return CNN
-
-# AugCNN: Approach 1
-def AugCNN1_full(data, output_dim=20, batch_size=30, num_epochs=10, kernel_size=(5,5), strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100):
-	input_shape=(max_email_words, word_vec_dim)
-
-	# Create CNNs
-	CNN_a = get_CNN(output_dim, kernel_size, strides, activation, max_email_len)
-	CNN_b = get_CNN(output_dim, kernel_size, strides, activation, max_email_len)
-
-	# Merge non-lexical features
-	# TODO: get non-lexical features
-
-	# Merge CNNs
-	merged_model = Sequential()
-	merged_model.add(Merge([LSTM_a, LSTM_b], mode='concat'))
-
-	# Softmax classification
-	merged_model.add(Dense(1, activation='softmax'))
-	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-	print "Compiled merged_model!"
-
-	# Fit model
-	merged_model.fit([data['train']['x'][0], data['train']['x'][1]], data['train']['y'],
-		batch_size=batch_size,
-		epochs=num_epochs,
-		validation_data=(data['dev']['x'], data['dev']['y']))
-	print "Fitted merged_model!"
-
-	# Evaluate model
-	score, acc = final_model.evaluate(data['dev']['x'], data['dev']['x'], batch_size=batch_size)
-	print "score:", score, " acc:", acc
 
 """
 Vectorizes email text data
@@ -188,7 +163,8 @@ def get_vectorized_email(email, wordVectors, max_email_words=50, word_vec_dim=10
 	# print "words:", words
 	words = words[:max_email_words]
 	wv = np.array([wordVectors[word] for word in words if word in wordVectors])
-	result[:wv.shape[0], :wv.shape[1]] = wv
+	if (wv.shape[0] > 0):
+		result[:wv.shape[0], :wv.shape[1]] = wv
 	return result
 
 
@@ -207,7 +183,7 @@ split_data dict -->
 
 x_values are a list of up to [max_email_words] word vectors (each 100 dimensions)
 """
-def processData1(raw_x_file, raw_y_file, pkl_file):
+def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 	data = {}
 	data['x'] = []
 	data['y'] = []
@@ -222,22 +198,27 @@ def processData1(raw_x_file, raw_y_file, pkl_file):
 			wordVectors[word] = coefs
 	print "Loaded GloVe!"
 
+	# Load npy file
+	raw_xa = np.load(raw_xa_file)
+	raw_xb = np.load(raw_xb_file)
+	raw_y = np.load(raw_y_file)
+
+	"""
 	# Load txt file
 	with open(raw_x_file, 'r') as f:
 		raw_x = f.readlines()
 	with open(raw_y_file, 'r') as f:
 		raw_y = f.readlines()
+	"""
 
 	# Separate A's and B's emails for each pairing
-	n_pairs = len(raw_x) / 2
+	n_pairs = len(raw_xa)
 
 	for pair_i in range(n_pairs):
-		a_ind = pair_i * 2
-		b_ind = a_ind + 1
-		a_email = get_vectorized_email(raw_x[a_ind], wordVectors)
-		b_email = get_vectorized_email(raw_x[b_ind], wordVectors)
+		a_email = get_vectorized_email(raw_xa[pair_i], wordVectors)
+		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors)
 		data['x'].append([a_email, b_email])
-		data['y'].append([raw_y[a_ind]])
+		data['y'].append([raw_y[pair_i]])
 	print "Read in data!"
 
 	# Shuffle data
@@ -278,16 +259,17 @@ def processData1(raw_x_file, raw_y_file, pkl_file):
 
 def main(args):
 	# TODO: update to true data file
-	raw_x_file = 'aug_data/grouped_test_x.txt'
-	raw_y_file = 'aug_data/grouped_test_y.txt'
-	pkl_file = 'aug_data/grouped_test.pkl'
+	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+	pkl_file = 'aug_data/approach1/grouped.pkl'
 
 	# Prepare train/dev/test data
 	if args.prepareData:
 		# Approach 1 data
 		if args.approach == 1:
 			print "Preparing Approach 1 data!"
-			data = processData1(raw_x_file, raw_y_file, pkl_file)
+			data = processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file)
 
 		# Approach 2 data
 		elif args.approach == 2:
@@ -316,16 +298,14 @@ def main(args):
 				print "devX shape:", np.shape(data['dev']['x'])
 				print "sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:])
 				AugLSTM1_full(data,
-					batch_size=2,
+					batch_size=30,
 					num_epochs=10)
 
 			elif args.model == 'CNN':
 				print "Running Approach 1 CNN!"
 				AugCNN1_full(data,
 					batch_size=2,
-					num_epochs=10,
-					kernel_size=(),
-					strides=())
+					num_epochs=10)
 
 		# Approach 2 model
 		elif args.approach == 2:
