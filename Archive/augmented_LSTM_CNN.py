@@ -90,9 +90,14 @@ def AugLSTM1_full_data():
 	num_epochs=50
 	max_email_words=50
 	word_vec_dim=100
-	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim
+	use_non_lex=True
+	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim, use_non_lex
 
-def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
+"""
+Previous hyperparam tunes:
+# epochs={{choice([10, 20, 50])}},
+"""
+def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100, use_non_lex=True):
 	input_shape=(max_email_words, word_vec_dim)
 
 	# Create LSTMs
@@ -102,38 +107,81 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	input_b = Input(shape=input_shape, dtype='float32')
 	LSTM_b = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_b)
 
-	# Merge non-lexical features
-	# TODO: get non-lexical features
+	if use_non_lex:
+		# Merge non-lexical features with each LSTM
+		# Prepare non-lexical data
+		data_nonlex = {}
+		splits = ['train', 'dev', 'test']
+		for split in splits:
+			data_nonlex[split] = []
+			data_nonlex[split].append(np.array([np.array(vals)[:,0] for feat, vals in data[split]['non_lex'].iteritems()]).T)
+			data_nonlex[split].append(np.array([np.array(vals)[:,1] for feat, vals in data[split]['non_lex'].iteritems()]).T)
+			print "shape:", np.shape(data_nonlex[split][0])
 
-	# Merge LSTMs
-	merged = concatenate([LSTM_a, LSTM_b])
+		non_lex_dim = len(data['train']['non_lex'])
+		input_nonlex_a = Input(shape=(non_lex_dim,), dtype='float32')
+		input_nonlex_b = Input(shape=(non_lex_dim,), dtype='float32')
+		non_lex_features_a = Dense(input_dim=non_lex_dim,output_dim=non_lex_dim)(input_nonlex_a)
+		non_lex_features_b = Dense(input_dim=non_lex_dim,output_dim=non_lex_dim)(input_nonlex_b)
+
+		# Merge LSTMs
+		merged = concatenate([LSTM_a, non_lex_features_a, LSTM_b, non_lex_features_b])
+		merged_dense = Dense(32, activation='relu')(merged)
 	
-	# Softmax classification
-	dense_out = Dense(1, activation='sigmoid')(merged)
-	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
+		# Softmax classification
+		dense_out = Dense(1, activation='sigmoid')(merged_dense)
+		merged_model = Model(inputs=[input_a, input_nonlex_a, input_b, input_nonlex_b], outputs=[dense_out])
+
+		# Prepare input data
+		print "nl:", np.shape(np.array(data_nonlex['dev'])[0])
+		print "x:", np.shape(np.array(data['dev']['x'])[:,0,:,:])
+		print "y:", np.shape(np.array(data['dev']['y']))
+		x_train = [np.array(data['train']['x'])[:,0,:,:],
+			data_nonlex['train'][0], 
+			np.array(data['train']['x'])[:,1,:,:], 
+			data_nonlex['train'][1]]
+		x_dev = [np.array(data['dev']['x'])[:,0,:,:], 
+			data_nonlex['dev'][0],
+			np.array(data['dev']['x'])[:,1,:,:], 
+			data_nonlex['dev'][1]]
+		x_test = [np.array(data['test']['x'])[:,0,:,:],
+			data_nonlex['test'][0],
+			np.array(data['test']['x'])[:,1,:,:],
+			data_nonlex['test'][1]]
+
+	else:
+		# Just use lexical features
+		# Merge LSTMs
+		merged = concatenate([LSTM_a, LSTM_b])
+		merged_dense = Dense(32, activation='relu')(merged)
+	
+		# Softmax classification
+		dense_out = Dense(1, activation='sigmoid')(merged_dense)
+		merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
+
+		# Prepare input data
+		x_train = [np.array(data['train']['x'])[:,0,:,:],
+			np.array(data['train']['x'])[:,1,:,:]]
+		x_dev = [np.array(data['dev']['x'])[:,0,:,:], 
+			np.array(data['dev']['x'])[:,1,:,:]]
+		x_test = [np.array(data['test']['x'])[:,0,:,:],
+			np.array(data['test']['x'])[:,1,:,:]]
+
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print("Compiled merged_model!")
 
+
 	# Fit model
-	merged_model.fit(
-		[np.array(data['train']['x'])[:,0,:,:], 
-		np.array(data['train']['x'])[:,1,:,:]], 
-		np.array(data['train']['y']),
+	merged_model.fit(x_train, np.array(data['train']['y']),
 		batch_size=batch_size,
-		# epochs={{choice([10, 20, 50])}},
 		epochs=num_epochs,
-		validation_data=(
-			[np.array(data['dev']['x'])[:,0,:,:], 
-			np.array(data['dev']['x'])[:,1,:,:]], 
-			np.array(data['dev']['y'])),
+		validation_data=(x_dev, np.array(data['dev']['y'])),
 		# callbacks=[metrics]
 		)
 	print "Fitted merged_model!"
 
 	# Evaluate model
-	val_predict = np.asarray(merged_model.predict(
-		[np.array(data['test']['x'])[:,0,:,:],
-		np.array(data['test']['x'])[:,1,:,:]])).round()
+	val_predict = np.asarray(merged_model.predict(x_test)).round()
 	val_target = np.array(data['test']['y'])
 	val_f1 = f1_score(val_target, val_predict)
 	val_recall = recall_score(val_target, val_predict)
@@ -180,55 +228,105 @@ def AugCNN1_full_data():
 		data = pickle.load(f)
 	num_filters=32
 	batch_size=30
-	num_epochs=20
+	num_epochs=10
 	strides=(1, 1)
 	activation='relu'
 	max_email_words=50
 	word_vec_dim=100
-	dropout=0.2
-	return data, num_filters, batch_size, num_epochs, strides, activation, max_email_words, word_vec_dim, dropout
+	dropout=0.5
+	use_non_lex=True
+	return data, num_filters, batch_size, num_epochs, strides, activation, max_email_words, word_vec_dim, dropout, use_non_lex
 
-def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100, dropout=0.2):
+"""
+Previous hyperparam tunes:
+# dropout_layer = Dropout({{choice([0.2, 0.3, 0.4])}})(merged)
+# dropout_layer = Dropout({{uniform(0, 1)}})(merged) 
+# merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+# epochs={{choice([10, 20, 50])}}
+"""
+def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100, dropout=0.2, use_non_lex=True):
 	
 	# Create CNNs
 	input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
 	input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
 
-	# Merge non-lexical features
-	# TODO: get non-lexical features
-
-	# Merge CNNs
-	merged = concatenate([CNN_a, CNN_b])
-	dropout_layer = Dropout({{uniform(0, 1)}})(merged) # dropout = fraction of input units to drop
-	# dropout_layer = Dropout(dropout)(merged)
 	
-	# Softmax classification
-	dense_out = Dense(1, activation='sigmoid')(dropout_layer)
-	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
-	# merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+	if use_non_lex:
+		# Merge non-lexical features
+		# Prepare non-lexical data
+		data_nonlex = {}
+		splits = ['train', 'dev', 'test']
+		for split in splits:
+			data_nonlex[split] = []
+			data_nonlex[split].append(np.array([np.array(vals)[:,0] for feat, vals in data[split]['non_lex'].iteritems()]).T)
+			data_nonlex[split].append(np.array([np.array(vals)[:,1] for feat, vals in data[split]['non_lex'].iteritems()]).T)
+			print "shape:", np.shape(data_nonlex[split][0])
+
+		non_lex_dim = len(data['train']['non_lex'])
+		input_nonlex_a = Input(shape=(non_lex_dim,), dtype='float32')
+		input_nonlex_b = Input(shape=(non_lex_dim,), dtype='float32')
+		non_lex_features_a = Dense(input_dim=non_lex_dim,output_dim=non_lex_dim)(input_nonlex_a)
+		non_lex_features_b = Dense(input_dim=non_lex_dim,output_dim=non_lex_dim)(input_nonlex_b)
+
+		# Merge CNNs
+		merged = concatenate([CNN_a, non_lex_features_a, CNN_b, non_lex_features_b])
+		merged_dense = Dense(32, activation=activation)(merged)
+		dropout_layer = Dropout(dropout)(merged_dense)
+
+		# Softmax classification
+		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
+		merged_model = Model(inputs=[input_a, input_nonlex_a, input_b, input_nonlex_b], outputs=[dense_out])
+
+		# Prepare input data
+		print "nl:", np.shape(np.array(data_nonlex['dev'])[0])
+		print "x:", np.shape(np.array(data['dev']['x'])[:,0,:,:])
+		print "y:", np.shape(np.array(data['dev']['y']))
+		x_train = [np.array(data['train']['x'])[:,0,:,:,np.newaxis],
+			data_nonlex['train'][0], 
+			np.array(data['train']['x'])[:,1,:,:,np.newaxis], 
+			data_nonlex['train'][1]]
+		x_dev = [np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
+			data_nonlex['dev'][0],
+			np.array(data['dev']['x'])[:,1,:,:,np.newaxis], 
+			data_nonlex['dev'][1]]
+		x_test = [np.array(data['test']['x'])[:,0,:,:,np.newaxis],
+			data_nonlex['test'][0],
+			np.array(data['test']['x'])[:,1,:,:,np.newaxis],
+			data_nonlex['test'][1]]
+
+	else:
+		# Just use words
+		# Merge CNNs
+		merged = concatenate([CNN_a, CNN_b])
+		merged_dense = Dense(32, activation=activation)(merged)
+		dropout_layer = Dropout(dropout)(merged_dense)
+	
+		# Softmax classification
+		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
+		merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
+
+		# Prepare input data
+		x_train = [np.array(data['train']['x'])[:,0,:,:,np.newaxis],
+			np.array(data['train']['x'])[:,1,:,:,np.newaxis]]
+		x_dev = [np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
+			np.array(data['dev']['x'])[:,1,:,:,np.newaxis]]
+		x_test = [np.array(data['test']['x'])[:,0,:,:,np.newaxis],
+			np.array(data['test']['x'])[:,1,:,:,np.newaxis]]
+
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print("Compiled merged_model!")
 
 	# Fit model
-	merged_model.fit(
-		[np.array(data['train']['x'])[:,0,:,:,np.newaxis], 
-		np.array(data['train']['x'])[:,1,:,:,np.newaxis]], 
-		np.array(data['train']['y']),
+	merged_model.fit(x_train, np.array(data['train']['y']),
 		batch_size=batch_size,
-		# epochs={{choice([10, 20, 50])}},
 		epochs=num_epochs,
-		validation_data=(
-			[np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
-			np.array(data['dev']['x'])[:,1,:,:,np.newaxis]], 
-			np.array(data['dev']['y'])),
+		validation_data=(x_dev, np.array(data['dev']['y'])),
 			#callbacks=[metrics]
 			)
 	print "Fitted merged_model!"
 
 	# Evaluate model
-	val_predict = np.asarray(merged_model.predict(
-		[np.array(data['test']['x'])[:,0,:,:,np.newaxis],
-		np.array(data['test']['x'])[:,1,:,:,np.newaxis]])).round()
+	val_predict = np.asarray(merged_model.predict(x_test)).round()
 	val_target = np.array(data['test']['y'])
 	val_f1 = f1_score(val_target, val_predict)
 	val_recall = recall_score(val_target, val_predict)
@@ -247,7 +345,7 @@ Vectorizes email text data
 	- Sum of sentence vectors (each sentence capped at max_sentence_words) (what we did before)
 	- Paragraph vectors
 """
-def get_vectorized_email(email, wordVectors, max_email_words=50, word_vec_dim=100):
+def get_vectorized_email(email, wordVectors, max_email_words=100, word_vec_dim=100):
 	result = np.zeros((max_email_words, word_vec_dim))
 	words = tokenize.word_tokenize(email.decode('utf-8'))
 	# print "words:", words
@@ -272,10 +370,11 @@ split_data dict -->
 
 x_values are a list of up to [max_email_words] word vectors (each 100 dimensions)
 """
-def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
+def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file):
 	data = {}
 	data['x'] = []
 	data['y'] = []
+	data['non_lex'] = {}
 
 	# Load word vectors and tokens
 	with open('aug_data/glove.6B.100d.txt', 'r') as f:
@@ -291,14 +390,14 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 	raw_xa = np.load(raw_xa_file)
 	raw_xb = np.load(raw_xb_file)
 	raw_y = np.load(raw_y_file)
-
-	"""
-	# Load txt file
-	with open(raw_x_file, 'r') as f:
-		raw_x = f.readlines()
-	with open(raw_y_file, 'r') as f:
-		raw_y = f.readlines()
-	"""
+	raw_non_lex_feats = {}
+	for file_prefix in non_lex_feats_files:
+		feat_name = file_prefix.split('/')[-1] # last part of filename
+		raw_non_lex_feats[feat_name] = [
+			np.load(file_prefix + '_1.npy'),
+			np.load(file_prefix + '_2.npy')
+		]
+		data['non_lex'][feat_name] = []
 
 	# Separate A's and B's emails for each pairing
 	n_pairs = len(raw_xa)
@@ -308,6 +407,10 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors)
 		data['x'].append([a_email, b_email])
 		data['y'].append([raw_y[pair_i]])
+		for feat_name in raw_non_lex_feats:
+			data['non_lex'][feat_name].append(
+				[raw_non_lex_feats[feat_name][0][pair_i],
+				raw_non_lex_feats[feat_name][1][pair_i]])
 	print("Read in data!")
 
 	# Shuffle data
@@ -315,6 +418,8 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 	shuffle_indices = np.random.permutation(np.arange(n_pairs))
 	data['x'] = [data['x'][i] for i in shuffle_indices]
 	data['y'] = [data['y'][i] for i in shuffle_indices]
+	for feat_name in raw_non_lex_feats:
+		data['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in shuffle_indices]
 	print("Shuffled data!")
 
 	# Split into train/dev/test
@@ -330,37 +435,51 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 		'dev': {},
 		'test': {},
 	}
+	# X input
 	split_data['train']['x'] = [data['x'][i] for i in range(train_cutoff)]
 	split_data['dev']['x'] = [data['x'][i] for i in range(train_cutoff, dev_cutoff)]
 	split_data['test']['x'] = [data['x'][i] for i in range(dev_cutoff, test_cutoff)]
+	# Y input
 	split_data['train']['y'] = [data['y'][i] for i in range(train_cutoff)]
 	split_data['dev']['y'] = [data['y'][i] for i in range(train_cutoff, dev_cutoff)]
 	split_data['test']['y'] = [data['y'][i] for i in range(dev_cutoff, test_cutoff)]
+	# Non-lex input
+	split_data['train']['non_lex'] = {}
+	split_data['dev']['non_lex'] = {}
+	split_data['test']['non_lex'] = {}
+	for feat_name in raw_non_lex_feats:
+		split_data['train']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff)]
+		split_data['dev']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff, dev_cutoff)]
+		split_data['test']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(dev_cutoff, test_cutoff)]
+
 	print("Split data!")	
 
 	# Save shuffled, split data to pickle
 	with open(pkl_file, 'wb') as f:
-		print("split_data:", split_data)
+		# print("split_data:", split_data)
 		pickle.dump(split_data, f)
 	print("Saved data!")
 
 	return split_data
 
 def main(args):
-	# TODO: update to true data file
+	# Data files
 	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
 	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
 	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
-	pkl_file = 'aug_data/approach1/grouped.pkl'
+	# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
+	pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
 
-	# pkl_file = 'aug_data/approach1_toy/grouped_test.pkl'
+	# Non-lexical feature file names
+	# (excluding "_1.npy" or "_2.npy" portion)
+	non_lex_feats_files = ['aug_data/approach1/non_lex_feats/avg_num_recipients', 'aug_data/approach1/non_lex_feats/avg_num_tokens_per_email']
 
 	# Prepare train/dev/test data
 	if args.prepareData:
 		# Approach 1 data
 		if args.approach == 1:
 			print("Preparing Approach 1 data!")
-			data = processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file)
+			data = processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file)
 
 		# Approach 2 data
 		elif args.approach == 2:
@@ -384,11 +503,15 @@ def main(args):
 		if args.approach == 1:
 			# Approach 1 LSTM
 			if args.model == 'LSTM':
-				print("Running Approach 1 LSTM!")
+				# print("Running Approach 1 LSTM!")
 				# print("trainX shape:", np.shape(data['train']['x']))
 				# print("trainY shape:", np.shape(data['train']['y']))
 				# print("devX shape:", np.shape(data['dev']['x']))
 				# print("sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:]))
+				# TEMP
+				print "non_lex train shape:", len(data['train']['non_lex'])
+				print "non_lex dev shape:", np.shape(np.array(data['dev']['non_lex']['avg_num_tokens_per_email']))
+				print "non_lex test shape:", np.shape(np.array(data['test']['non_lex']['avg_num_tokens_per_email']))
 				if args.tuneParams:
 					# Hyperparameter tuning
 					best_run, best_model = optim.minimize(
@@ -403,9 +526,10 @@ def main(args):
 						output_dim=100,
 						dropout=0.3,
 						batch_size=30,
-						num_epochs=50,
-						max_email_words=50,
-						word_vec_dim=100)
+						num_epochs=50, # 50
+						max_email_words=100,
+						word_vec_dim=100,
+						use_non_lex=args.useNonLex)
 
 			# Approach 1 CNN
 			elif args.model == 'CNN':
@@ -425,12 +549,13 @@ def main(args):
 					AugCNN1_full(data,
 						num_filters=32,
 						batch_size=30,
-						num_epochs=20,
+						num_epochs=100,
 						strides=(1, 1),
 						activation='relu',
-						max_email_words=50,
+						max_email_words=100,
 						word_vec_dim=100,
-						dropout=0.2)
+						dropout=0.2,
+						use_non_lex=args.useNonLex)
 
 		# Approach 2 model
 		elif args.approach == 2:
@@ -444,6 +569,7 @@ if __name__ == "__main__":
 	parser.add_argument('--approach', type=int, default=1, help="which number approach to use (default=1)")
 	parser.add_argument('--model', type=str, default='LSTM', help="which model to use (default=LSTM)")
 	parser.add_argument('--tuneParams', type=bool, default=False, help="whether to tune hyperparams with hyperas (default=False)")
+	parser.add_argument('--useNonLex', type=bool, default=False, help="whether to use non-lexical (structural) features (default=False)")
 
 	args = parser.parse_args()
 	main(args)
