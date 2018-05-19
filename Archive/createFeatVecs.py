@@ -269,16 +269,117 @@ def get_power_labels_and_indices_grouped(d_emails):
   email_contents =[]
   avgNumRecipients = []
   avgNumTokensPerEmail = []
+  avgNumEmailsPerGroup = 0
   for cur_key in email_contents_map: # for each pair found in emails
     labels.append(labels_map[cur_key])
     email_contents.append(email_contents_map[cur_key][0])
     avgNumRecipients.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
     avgNumTokensPerEmail.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
+    avgNumEmailsPerGroup += float(email_contents_map[cur_key][3])
 
   print "# labels: %d, # email_contents: %d" % (len(labels), len(email_contents))
   print len(avgNumRecipients)
   print len(avgNumTokensPerEmail)
+  print "Avg Num Emails Per Group: " + str(avgNumEmailsPerGroup / float(len(email_contents_map)))
   return labels, email_contents, avgNumRecipients, avgNumTokensPerEmail
+
+def get_power_labels_and_indices_grouped_1(d_emails):
+  """Returns power labels for each (sender, recipient) pair"""
+  labels_map = {} # (sender_id, recipient_id): label (0 = dom sender, sub recip), (1 = sub sender, dom recip)
+  email_contents_map = {} # (sender_id, recipient_id): all email text shared between these parties
+  # read in dominance tuples file in the form (boss, subordinate): immediate?
+  with open('Columbia_Enron_DominanceTuples.csv') as file:
+    d_reader = csv.reader(file, delimiter=",")
+    rows_read = 0
+    for row in d_reader:
+      if rows_read != 0:
+        cur_key1 = (int(row[0]), int(row[1])) # (dom_id, sub_id)
+        cur_key2 = (int(row[1]), int(row[0])) # (sub_id, dom_id)
+        if cur_key1 not in labels_map:
+          labels_map[cur_key1] = 0
+        if cur_key2 not in labels_map:
+          labels_map[cur_key2] = 1
+      rows_read += 1
+
+  # Go through each email to create/update features
+  for i in range(0, CONST_NUM_EMAILS):
+    email = d_emails[str(i)]
+
+    # check from
+    if "from" not in email:
+      continue
+    sender = email["from"]
+    if sender is None:
+      continue
+
+    # check to
+    if "recipients" not in email:
+      continue
+    recipients = email["recipients"]
+    if recipients is None:
+      continue
+
+    # check valid text content
+    if "subject" not in email and "body" not in email:
+      continue
+
+    # Prepare content of the email
+    content = ""
+    if "subject" in email:
+      content += email["subject"]
+    if "body" in email:
+      content += " " + email["body"]
+    content = content.encode('utf-8').replace('\n', '')
+
+    # keep track of (sender, recipient) pair and make
+
+    # Generate features for each recipient of email
+    for j in range(0, len(recipients)):
+      cur_key = (int(sender), int(recipients[j]))
+
+      # Check if we know the correct power relation for this (sender, recipient) pair
+      if cur_key in labels_map:
+        if cur_key in email_contents_map:
+          # Append to existing email contents for this (sender, recipient) pair
+          email_contents_map[cur_key] = (email_contents_map[cur_key][0] + content, email_contents_map[cur_key][1] + len(recipients), \
+                                         email_contents_map[cur_key][2] + len(clean_str(content.strip())), email_contents_map[cur_key][3] + 1)
+        else:
+          # Create new entry for this (sender, recipient) pair
+          email_contents_map[cur_key] = (content, len(recipients), len(content.split(" ")), 1)
+
+  # Generate ordered lists for labels and email_contents
+  labels = []
+  email_contents_1 = []
+  email_contents_2 = []
+  avgNumRecipients_1 = []
+  avgNumRecipients_2 = []
+  avgNumTokensPerEmail_1 = []
+  avgNumTokensPerEmail_2 = []
+  avgNumEmailsPerGroup_1 = 0
+  avgNumEmailsPerGroup_2 = 0
+  usedKeys = {}
+  for cur_key in email_contents_map: # for each pair found in emails
+    switch_key = (cur_key[1], cur_key[0])
+    if cur_key not in usedKeys and switch_key not in usedKeys and switch_key in email_contents_map:
+      labels.append(labels_map[cur_key])
+
+      email_contents_1.append(email_contents_map[cur_key][0])
+      email_contents_2.append(email_contents_map[switch_key][0]) #get (recipient, sender) emails
+      avgNumRecipients_1.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
+      avgNumRecipients_2.append(float(email_contents_map[switch_key][1]) / float(email_contents_map[switch_key][3]))
+      avgNumTokensPerEmail_1.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
+      avgNumTokensPerEmail_2.append(float(email_contents_map[switch_key][2]) / float(email_contents_map[switch_key][3]))
+      avgNumEmailsPerGroup_1 += float(email_contents_map[cur_key][3])
+      avgNumEmailsPerGroup_2 += float(email_contents_map[switch_key][3])
+    usedKeys[cur_key] = True
+    usedKeys[switch_key] = True
+
+  print "# labels: %d, # email_contents: %d" % (len(labels), len(email_contents_1))
+  print len(avgNumRecipients_1)
+  print len(avgNumTokensPerEmail_1)
+  print "Avg Num Emails Per Group 1: " + str(avgNumEmailsPerGroup_1 / float(len(email_contents_1)))
+  print "Avg Num Emails Per Group 2: " + str(avgNumEmailsPerGroup_2 / float(len(email_contents_2)))
+  return labels, email_contents_1, email_contents_2, avgNumRecipients_1, avgNumRecipients_2, avgNumTokensPerEmail_1, avgNumTokensPerEmail_2, avgNumEmailsPerGroup_1, avgNumEmailsPerGroup_2
 
 
 def get_power_labels_and_indices(d_emails):
@@ -492,6 +593,7 @@ def process_command_line():
   parser.add_argument('--bow', dest='is_bow', type=bool, default=False, help='Chooses to generate bag-of-words features')
   parser.add_argument('--grouped', dest='is_grouped', type=bool, default=False, help='Chooses to generate features grouped by (sender, recipient) pairs (as opposed to per-email features)')
   parser.add_argument('--thread', dest='is_thread', type=bool, default=False, help='Analyzes email text on the thread-level')
+  parser.add_argument('--new_grouped_1', dest="is_grouped_1", type=bool, default=False, help='Alternating (sender, recipient) and (recipient, sender) groups')
   args = parser.parse_args()
   return args
 
@@ -548,7 +650,44 @@ def main():
         np.savetxt('avg_num_tokens_per_email.txt', avgNumTokensPerEmail)
 
         print "Finished saving email_contents and labels to files!"
-        exit(0)
+
+      elif args.is_grouped_1:
+        print "Generating *grouped* features for (sender, recipient) and (recipient, sender) pairs..."
+        # Generate features for (sender, recipient) pairs
+        labels, email_contents_1, email_contents_2, avgNumRecipients_1, avgNumRecipients_2, avgNumTokensPerEmail_1, avgNumTokensPerEmail_2, avgNumEmailsPerGroup_1, avgNumEmailsPerGroup_2 = get_power_labels_and_indices_grouped_1(d_emails)
+        print "Finished getting power labels and indices!"
+
+        # save labels
+        np.save('labels_grouped.npy', labels)
+        np.savetxt('labels_grouped.txt', labels)
+
+        avgNumRecipients_1 = np.array(avgNumRecipients_1)
+        np.save('avg_num_recipients_1.npy', avgNumRecipients_1)
+        np.savetxt('avg_num_recipients_1.txt', avgNumRecipients_1)
+
+        avgNumRecipients_2 = np.array(avgNumRecipients_2)
+        np.save('avg_num_recipients_2.npy', avgNumRecipients_2)
+        np.savetxt('avg_num_recipients_2.txt', avgNumRecipients_2)
+
+        avgNumTokensPerEmail_1 = np.array(avgNumTokensPerEmail_1)
+        np.save('avg_num_tokens_per_email_1.npy', avgNumTokensPerEmail_1)
+        np.savetxt('avg_num_tokens_per_email_1.txt', avgNumTokensPerEmail_1)
+
+        avgNumTokensPerEmail_2 = np.array(avgNumTokensPerEmail_2)
+        np.save('avg_num_tokens_per_email_2.npy', avgNumTokensPerEmail_2)
+        np.savetxt('avg_num_tokens_per_email_2.txt', avgNumTokensPerEmail_2)
+
+        # save email_contents
+        email_contents = np.array(email_contents_1)
+        np.save('email_contents_grouped_1.npy', email_contents_1)
+        # with open('email_contents_grouped_1.txt','wb') as f:
+        #   np.savetxt(f, email_contents_1, delimiter='\n', fmt="%s")
+
+        email_contents = np.array(email_contents_2)
+        np.save('email_contents_grouped_2.npy', email_contents_2)
+        with open('email_contents_grouped_2.txt','wb') as f:
+          np.savetxt(f, email_contents_2, delimiter='\n', fmt="%s")
+        print "Finished saving email_contents and labels to files!"
 
       else:
         labels, email_contents, num_recipients_vector, gender_feature_vector = get_power_labels_and_indices(d_emails)
