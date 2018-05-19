@@ -16,12 +16,16 @@ Run Approach 1 LSTM:
 import argparse
 import numpy as np
 import pickle
+
 from keras.models import Sequential, Model
 from keras.layers import Embedding, Input, Conv1D, Conv2D, MaxPool2D, MaxPooling1D, GlobalMaxPooling1D
 from keras.layers import Flatten, Dropout
 from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
+
+
+
 from nltk import tokenize
 
 # AugLSTM: Approach 1
@@ -70,32 +74,32 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 
 
 def get_CNN(num_filters, strides, activation, max_email_words, word_vec_dim):
-	input_shape=(max_email_words, word_vec_dim)
+	input_shape=(max_email_words, word_vec_dim, 1)
 	# input_shape=(max_email_words,)
 	cur_input = Input(shape=input_shape, dtype='float32')
-
-	filter_sizes = [1,2,3] # TODO: change to 3,4,5
-
-	# TODO: continue here!
-	# Check kernel_size
+	
+	# 1) Simple Conv1D version
 	# conv = Conv1D(num_filters, kernel_size=5, strides=1, activation=activation)(cur_input)
-	l_cov1= Conv1D(128, 2, activation='relu')(cur_input)
-	l_pool1 = MaxPooling1D(4)(l_cov1)
-	l_cov2 = Conv1D(128, 2, activation='relu')(l_pool1)
-	l_pool2 = MaxPooling1D(2)(l_cov2)
-	l_cov3 = Conv1D(128, 2, activation='relu')(l_pool2)
-	l_pool3 = MaxPooling1D(5)(l_cov3)  # global max pooling
-	flatten = Flatten()(l_pool3)
-	# conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	# conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	# conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	# l_cov1= Conv1D(128, 2, activation='relu')(cur_input)
+	# l_pool1 = MaxPooling1D(4)(l_cov1)
+	# l_cov2 = Conv1D(128, 2, activation='relu')(l_pool1)
+	# l_pool2 = MaxPooling1D(2)(l_cov2)
+	# l_cov3 = Conv1D(128, 2, activation='relu')(l_pool2)
+	# l_pool3 = MaxPooling1D(2)(l_cov3)  # global max pooling
+	# flatten = Flatten()(l_pool3)
 
-	# maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
-	# maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
-	# maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
+	# 2) Simple Conv2D version
 
-	# concatenated_tensor = concatenate(axis=1)([maxpool_0, maxpool_1, maxpool_2])
-	# flatten = Flatten()(concatenated_tensor)
+	# 3) Multiple filters version
+	filter_sizes = [3,4,5]
+	conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
+	maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
+	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
+	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
+	flatten = Flatten()(concatenated_tensor)
 
 	# CNN = Sequential()
 	# CNN.add(Embedding(input_dim=word_vec_dim, output_dim=output_dim, input_length=max_email_words))
@@ -123,27 +127,28 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	dropout = Dropout(dropout)(merged) # dropout = fraction of input units to drop
 	
 	# Softmax classification
-	dense_out = Dense(1, activation='softmax')(dropout)
+	dense_out = Dense(1, activation='sigmoid')(dropout)
 	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print "Compiled merged_model!"
 
 	# Fit model
 	merged_model.fit(
-		[np.array(data['train']['x'])[:,0,:,:], 
-		np.array(data['train']['x'])[:,1,:,:]], 
+		[np.array(data['train']['x'])[:,0,:,:,np.newaxis], 
+		np.array(data['train']['x'])[:,1,:,:,np.newaxis]], 
 		np.array(data['train']['y']),
 		batch_size=batch_size,
 		epochs=num_epochs,
 		validation_data=(
-			[np.array(data['dev']['x'])[:,0,:,:], 
-			np.array(data['dev']['x'])[:,1,:,:]], 
+			[np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
+			np.array(data['dev']['x'])[:,1,:,:,np.newaxis]], 
 			np.array(data['dev']['y'])))
 	print "Fitted merged_model!"
 
 	# Evaluate model
 	score, acc = merged_model.evaluate(
-		[np.array(data['test']['x'])[:,0,:,:], np.array(data['test']['x'])[:,1,:,:]],
+		[np.array(data['test']['x'])[:,0,:,:,np.newaxis], 
+		np.array(data['test']['x'])[:,1,:,:,np.newaxis]],
 		np.array(data['test']['y']))
 	print "score:", score, " acc:", acc
 
@@ -259,10 +264,12 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 
 def main(args):
 	# TODO: update to true data file
-	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
-	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
-	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+	# raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+	# raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+	# raw_y_file = 'aug_data/approach1/labels_grouped.npy'
 	pkl_file = 'aug_data/approach1/grouped.pkl'
+
+	# pkl_file = 'aug_data/approach1_toy/grouped_test.pkl'
 
 	# Prepare train/dev/test data
 	if args.prepareData:
