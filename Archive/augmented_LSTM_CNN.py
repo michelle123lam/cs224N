@@ -24,9 +24,31 @@ from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 
-
+from keras.callbacks import Callback
+from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
 from nltk import tokenize
+
+# Metrics wrapper
+class Metrics(Callback):
+	def on_train_begin(self, logs={}):
+		self.val_f1s = []
+		self.val_recalls = []
+		self.val_precisions = []
+
+	def on_epoch_end(self, epoch, logs={}):
+		val_predict = (np.asarray(self.model.predict([self.validation_data[0], self.validation_data[1]]))).round()
+		val_targ = self.validation_data[2]
+		_val_f1 = f1_score(val_targ, val_predict)
+		_val_recall = recall_score(val_targ, val_predict)
+		_val_precision = precision_score(val_targ, val_predict)
+		self.val_f1s.append(_val_f1)
+		self.val_recalls.append(_val_recall)
+		self.val_precisions.append(_val_precision)
+		print " - val_f1: %f - val_precision: %f - val_recall %f" %(_val_f1, _val_precision, _val_recall)
+		return
+
+metrics = Metrics()
 
 # AugLSTM: Approach 1
 def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
@@ -61,17 +83,20 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 		validation_data=(
 			[np.array(data['dev']['x'])[:,0,:,:], 
 			np.array(data['dev']['x'])[:,1,:,:]], 
-			np.array(data['dev']['y'])))
+			np.array(data['dev']['y'])),
+		callbacks=[metrics])
 	print "Fitted merged_model!"
 
 	# Evaluate model
-	score, acc = merged_model.evaluate(
-		[np.array(data['test']['x'])[:,0,:,:], 
-		np.array(data['test']['x'])[:,1,:,:]],
-		np.array(data['test']['y']))
-	print "score:", score, " acc:", acc
-
-
+	val_predict = np.asarray(merged_model.predict(
+		[np.array(data['test']['x'])[:,0,:,:],
+		np.array(data['test']['x'])[:,1,:,:]])).round()
+	val_target = np.array(data['test']['y'])
+	val_f1 = f1_score(val_target, val_predict)
+	val_recall = recall_score(val_target, val_predict)
+	val_precision = precision_score(val_target, val_predict)
+	val_acc = float(np.mean(val_predict == val_target))
+	print " - val_acc: %f - val_f1: %f - val_precision: %f - val_recall %f" %(val_acc, val_f1, val_precision, val_recall)
 
 def get_CNN(num_filters, strides, activation, max_email_words, word_vec_dim):
 	input_shape=(max_email_words, word_vec_dim, 1)
@@ -142,17 +167,20 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		validation_data=(
 			[np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
 			np.array(data['dev']['x'])[:,1,:,:,np.newaxis]], 
-			np.array(data['dev']['y'])))
+			np.array(data['dev']['y'])),
+			callbacks=[metrics])
 	print "Fitted merged_model!"
 
 	# Evaluate model
-	score, acc = merged_model.evaluate(
-		[np.array(data['test']['x'])[:,0,:,:,np.newaxis], 
-		np.array(data['test']['x'])[:,1,:,:,np.newaxis]],
-		np.array(data['test']['y']))
-	print "score:", score, " acc:", acc
-
-
+	val_predict = np.asarray(merged_model.predict(
+		[np.array(data['test']['x'])[:,0,:,:,np.newaxis],
+		np.array(data['test']['x'])[:,1,:,:,np.newaxis]])).round()
+	val_target = np.array(data['test']['y'])
+	val_f1 = f1_score(val_target, val_predict)
+	val_recall = recall_score(val_target, val_predict)
+	val_precision = precision_score(val_target, val_predict)
+	val_acc = float(np.mean(val_predict == val_target))
+	print " - val_acc: %f - val_f1: %f - val_precision: %f - val_recall %f" %(val_acc, val_f1, val_precision, val_recall)
 
 """
 Vectorizes email text data
@@ -264,9 +292,9 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 
 def main(args):
 	# TODO: update to true data file
-	# raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
-	# raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
-	# raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
 	pkl_file = 'aug_data/approach1/grouped.pkl'
 
 	# pkl_file = 'aug_data/approach1_toy/grouped_test.pkl'
@@ -318,7 +346,6 @@ def main(args):
 		elif args.approach == 2:
 			# TODO
 			return
-
 
 if __name__ == "__main__":
 	# Prepare command line flags
