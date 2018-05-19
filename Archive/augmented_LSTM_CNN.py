@@ -13,6 +13,7 @@ Generate Approach 1 data:
 Run Approach 1 LSTM:
 	python ./augmented_LSTM_CNN.py --approach=1 --model=LSTM
 """
+from __future__ import print_function
 import argparse
 import numpy as np
 import pickle
@@ -24,11 +25,26 @@ from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 
-
+from hyperas import optim
+from hyperas.distributions import choice, uniform, conditional
+from hyperopt import Trials, STATUS_OK, rand, tpe
 
 from nltk import tokenize
 
-# AugLSTM: Approach 1
+# AugLSTM: Approach 1 ---------------------------------
+def AugLSTM1_full_data():
+	pkl_file = 'aug_data/approach1/grouped.pkl'
+	with open(pkl_file, 'rb') as f:
+		data = pickle.load(f)
+	output_dim = 100
+	dropout = 0.2
+	batch_size=30
+	num_epochs=10
+	max_email_words=50
+	word_vec_dim=100
+	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim
+
+# def AugLSTM1_full(data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim):
 def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
 	input_shape=(max_email_words, word_vec_dim)
 
@@ -48,8 +64,8 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	# Softmax classification
 	dense_out = Dense(1, activation='sigmoid')(merged)
 	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
-	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-	print "Compiled merged_model!"
+	merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+	print("Compiled merged_model!")
 
 	# Fit model
 	merged_model.fit(
@@ -62,18 +78,19 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 			[np.array(data['dev']['x'])[:,0,:,:], 
 			np.array(data['dev']['x'])[:,1,:,:]], 
 			np.array(data['dev']['y'])))
-	print "Fitted merged_model!"
+	print("Fitted merged_model!")
 
 	# Evaluate model
 	score, acc = merged_model.evaluate(
 		[np.array(data['test']['x'])[:,0,:,:], 
 		np.array(data['test']['x'])[:,1,:,:]],
 		np.array(data['test']['y']))
-	print "score:", score, " acc:", acc
+	print("score:", score, " acc:", acc)
+	return {'loss': -acc, 'status': STATUS_OK, 'model': merged_model}
 
 
-
-def get_CNN(num_filters, strides, activation, max_email_words, word_vec_dim):
+# AugCNN: Approach 1 ---------------------------------
+def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50, word_vec_dim=100):
 	input_shape=(max_email_words, word_vec_dim, 1)
 	# input_shape=(max_email_words,)
 	cur_input = Input(shape=input_shape, dtype='float32')
@@ -112,7 +129,20 @@ def get_CNN(num_filters, strides, activation, max_email_words, word_vec_dim):
 	# CNN.add(Dense(num_classes, activation='softmax'))
 	return cur_input, flatten
 
-# AugCNN: Approach 1
+def AugCNN1_full_data():
+	pkl_file = 'aug_data/approach1/grouped.pkl'
+	with open(pkl_file, 'rb') as f:
+		data = pickle.load(f)
+	num_filters=32
+	batch_size=30
+	num_epochs=10
+	strides=(1, 1)
+	activation='relu'
+	max_email_words=50
+	word_vec_dim=100
+	dropout=0.2
+	return data, num_filters, batch_size, num_epochs, strides, activation, max_email_words, word_vec_dim, dropout
+
 def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100, dropout=0.2):
 	
 	# Create CNNs
@@ -124,13 +154,14 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 
 	# Merge CNNs
 	merged = concatenate([CNN_a, CNN_b])
-	dropout = Dropout(dropout)(merged) # dropout = fraction of input units to drop
+	dropout_layer = Dropout(dropout)(merged) # dropout = fraction of input units to drop
+	# dropout = Dropout({{uniform(0, 1)}})(merged)
 	
 	# Softmax classification
-	dense_out = Dense(1, activation='sigmoid')(dropout)
+	dense_out = Dense(1, activation='sigmoid')(dropout_layer)
 	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
-	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-	print "Compiled merged_model!"
+	merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+	print("Compiled merged_model!")
 
 	# Fit model
 	merged_model.fit(
@@ -143,17 +174,19 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 			[np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
 			np.array(data['dev']['x'])[:,1,:,:,np.newaxis]], 
 			np.array(data['dev']['y'])))
-	print "Fitted merged_model!"
+	print("Fitted merged_model!")
 
 	# Evaluate model
 	score, acc = merged_model.evaluate(
 		[np.array(data['test']['x'])[:,0,:,:,np.newaxis], 
 		np.array(data['test']['x'])[:,1,:,:,np.newaxis]],
 		np.array(data['test']['y']))
-	print "score:", score, " acc:", acc
+	print("score:", score, " acc:", acc)
+	return {'loss': -acc, 'status': STATUS_OK, 'model': merged_model}
 
 
 
+# Data processing ---------------------------------
 """
 Vectorizes email text data
 - TODO: decide best way to capture email in terms of word vecs:
@@ -171,7 +204,6 @@ def get_vectorized_email(email, wordVectors, max_email_words=50, word_vec_dim=10
 	if (wv.shape[0] > 0):
 		result[:wv.shape[0], :wv.shape[1]] = wv
 	return result
-
 
 """
 Process data for Approach 1
@@ -201,7 +233,7 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 			word = values[0]
 			coefs = np.asarray(values[1:], dtype='float32')
 			wordVectors[word] = coefs
-	print "Loaded GloVe!"
+	print("Loaded GloVe!")
 
 	# Load npy file
 	raw_xa = np.load(raw_xa_file)
@@ -224,14 +256,14 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors)
 		data['x'].append([a_email, b_email])
 		data['y'].append([raw_y[pair_i]])
-	print "Read in data!"
+	print("Read in data!")
 
 	# Shuffle data
 	np.random.seed(10)
 	shuffle_indices = np.random.permutation(np.arange(n_pairs))
 	data['x'] = [data['x'][i] for i in shuffle_indices]
 	data['y'] = [data['y'][i] for i in shuffle_indices]
-	print "Shuffled data!"
+	print("Shuffled data!")
 
 	# Split into train/dev/test
 	train = 0.6
@@ -252,13 +284,13 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 	split_data['train']['y'] = [data['y'][i] for i in range(train_cutoff)]
 	split_data['dev']['y'] = [data['y'][i] for i in range(train_cutoff, dev_cutoff)]
 	split_data['test']['y'] = [data['y'][i] for i in range(dev_cutoff, test_cutoff)]
-	print "Split data!"	
+	print("Split data!")	
 
 	# Save shuffled, split data to pickle
 	with open(pkl_file, 'wb') as f:
-		print "split_data:", split_data
+		print("split_data:", split_data)
 		pickle.dump(split_data, f)
-	print "Saved data!"
+	print("Saved data!")
 
 	return split_data
 
@@ -275,12 +307,12 @@ def main(args):
 	if args.prepareData:
 		# Approach 1 data
 		if args.approach == 1:
-			print "Preparing Approach 1 data!"
+			print("Preparing Approach 1 data!")
 			data = processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file)
 
 		# Approach 2 data
 		elif args.approach == 2:
-			print "Preparing Approach 2 data!"
+			print("Preparing Approach 2 data!")
 			return
 
 	# Run model
@@ -299,20 +331,43 @@ def main(args):
 	    # Approach 1 model
 		if args.approach == 1:
 			if args.model == 'LSTM':
-				print "Running Approach 1 LSTM!"
-				print "trainX shape:", np.shape(data['train']['x'])
-				print "trainY shape:", np.shape(data['train']['y'])
-				print "devX shape:", np.shape(data['dev']['x'])
-				print "sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:])
-				AugLSTM1_full(data,
-					batch_size=30,
-					num_epochs=10)
+				print("Running Approach 1 LSTM!")
+				print("trainX shape:", np.shape(data['train']['x']))
+				print("trainY shape:", np.shape(data['train']['y']))
+				print("devX shape:", np.shape(data['dev']['x']))
+				print("sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:]))
+
+				# Hyperparameter tuning
+				best_run, best_model = optim.minimize(
+					model=AugLSTM1_full,
+					data=AugLSTM1_full_data,
+					algo=rand.suggest,
+					max_evals=5,
+					trials=Trials())
+				print("best_run:", best_run)
+
+				# AugLSTM1_full(data,
+				# 	batch_size=30,
+				# 	num_epochs=10)
 
 			elif args.model == 'CNN':
-				print "Running Approach 1 CNN!"
-				AugCNN1_full(data,
-					batch_size=2,
-					num_epochs=10)
+				print("Running Approach 1 CNN!")
+				# Hyperparameter tuning
+				functions=[get_CNN]
+				best_run, best_model = optim.minimize(
+					model=AugCNN1_full,
+					data=AugCNN1_full_data,
+					functions=functions,
+					algo=rand.suggest,
+					max_evals=5,
+					trials=Trials())
+				print("best_run:", best_run)
+				# print("Evaluation of best performing model:")
+			 	# print(best_model.evaluate(X_test, Y_test))
+
+				# AugCNN1_full(data,
+				# 	batch_size=2,
+				# 	num_epochs=10)
 
 		# Approach 2 model
 		elif args.approach == 2:
