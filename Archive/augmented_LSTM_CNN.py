@@ -13,7 +13,6 @@ Generate Approach 1 data:
 Run Approach 1 LSTM:
 	python ./augmented_LSTM_CNN.py --approach=1 --model=LSTM
 """
-from __future__ import print_function
 import argparse
 import numpy as np
 import pickle
@@ -24,12 +23,37 @@ from keras.layers import Flatten, Dropout
 from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
+from keras.callbacks import Callback
+from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
 from hyperas import optim
 from hyperas.distributions import choice, uniform, conditional
 from hyperopt import Trials, STATUS_OK, rand, tpe
 
 from nltk import tokenize
+
+
+# Metrics wrapper
+class Metrics(Callback):
+	def on_train_begin(self, logs={}):
+		self.val_f1s = []
+		self.val_recalls = []
+		self.val_precisions = []
+
+	def on_epoch_end(self, epoch, logs={}):
+		val_predict = (np.asarray(self.model.predict([self.validation_data[0], self.validation_data[1]]))).round()
+		val_targ = self.validation_data[2]
+		_val_f1 = f1_score(val_targ, val_predict)
+		_val_recall = recall_score(val_targ, val_predict)
+		_val_precision = precision_score(val_targ, val_predict)
+		self.val_f1s.append(_val_f1)
+		self.val_recalls.append(_val_recall)
+		self.val_precisions.append(_val_precision)
+		print " - val_f1: %f - val_precision: %f - val_recall %f" %(_val_f1, _val_precision, _val_recall)
+		return
+
+metrics = Metrics()
+
 
 # AugLSTM: Approach 1 ---------------------------------
 def AugLSTM1_full_data():
@@ -44,7 +68,6 @@ def AugLSTM1_full_data():
 	word_vec_dim=100
 	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim
 
-# def AugLSTM1_full(data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim):
 def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100):
 	input_shape=(max_email_words, word_vec_dim)
 
@@ -77,17 +100,23 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 		validation_data=(
 			[np.array(data['dev']['x'])[:,0,:,:], 
 			np.array(data['dev']['x'])[:,1,:,:]], 
-			np.array(data['dev']['y'])))
-	print("Fitted merged_model!")
+			np.array(data['dev']['y'])),
+		# callbacks=[metrics]
+		)
+	print "Fitted merged_model!"
 
 	# Evaluate model
-	score, acc = merged_model.evaluate(
-		[np.array(data['test']['x'])[:,0,:,:], 
-		np.array(data['test']['x'])[:,1,:,:]],
-		np.array(data['test']['y']))
-	print("score:", score, " acc:", acc)
-	return {'loss': -acc, 'status': STATUS_OK, 'model': merged_model}
+	val_predict = np.asarray(merged_model.predict(
+		[np.array(data['test']['x'])[:,0,:,:],
+		np.array(data['test']['x'])[:,1,:,:]])).round()
+	val_target = np.array(data['test']['y'])
+	val_f1 = f1_score(val_target, val_predict)
+	val_recall = recall_score(val_target, val_predict)
+	val_precision = precision_score(val_target, val_predict)
+	val_acc = float(np.mean(val_predict == val_target))
+	print " - val_acc: %f - val_f1: %f - val_precision: %f - val_recall %f" %(val_acc, val_f1, val_precision, val_recall)
 
+	return {'loss': -val_acc, 'status': STATUS_OK, 'model': merged_model}
 
 # AugCNN: Approach 1 ---------------------------------
 def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50, word_vec_dim=100):
@@ -117,16 +146,7 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
 	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
 	flatten = Flatten()(concatenated_tensor)
-
-	# CNN = Sequential()
-	# CNN.add(Embedding(input_dim=word_vec_dim, output_dim=output_dim, input_length=max_email_words))
-	# CNN.add(Conv2D(output_dim, kernel_size=kernel_size, strides=strides, input_shape=input_shape, activation=activation))
-	# CNN.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
-	# CNN.add(Conv2D(64, (5, 5), activation='relu'))
-	# CNN.add(MaxPooling2D(pool_size=(2, 2)))
-	# CNN.add(Flatten())
-	# CNN.add(Dense(1000, activation='relu'))
-	# CNN.add(Dense(num_classes, activation='softmax'))
+	
 	return cur_input, flatten
 
 def AugCNN1_full_data():
@@ -154,13 +174,13 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 
 	# Merge CNNs
 	merged = concatenate([CNN_a, CNN_b])
-	dropout_layer = Dropout(dropout)(merged) # dropout = fraction of input units to drop
-	# dropout = Dropout({{uniform(0, 1)}})(merged)
+	dropout_layer = Dropout({{uniform(0, 1)}})(merged) # dropout = fraction of input units to drop
 	
 	# Softmax classification
 	dense_out = Dense(1, activation='sigmoid')(dropout_layer)
 	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
-	merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+	# merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print("Compiled merged_model!")
 
 	# Fit model
@@ -173,18 +193,23 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		validation_data=(
 			[np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
 			np.array(data['dev']['x'])[:,1,:,:,np.newaxis]], 
-			np.array(data['dev']['y'])))
-	print("Fitted merged_model!")
+			np.array(data['dev']['y'])),
+			#callbacks=[metrics]
+			)
+	print "Fitted merged_model!"
 
 	# Evaluate model
-	score, acc = merged_model.evaluate(
-		[np.array(data['test']['x'])[:,0,:,:,np.newaxis], 
-		np.array(data['test']['x'])[:,1,:,:,np.newaxis]],
-		np.array(data['test']['y']))
-	print("score:", score, " acc:", acc)
-	return {'loss': -acc, 'status': STATUS_OK, 'model': merged_model}
+	val_predict = np.asarray(merged_model.predict(
+		[np.array(data['test']['x'])[:,0,:,:,np.newaxis],
+		np.array(data['test']['x'])[:,1,:,:,np.newaxis]])).round()
+	val_target = np.array(data['test']['y'])
+	val_f1 = f1_score(val_target, val_predict)
+	val_recall = recall_score(val_target, val_predict)
+	val_precision = precision_score(val_target, val_predict)
+	val_acc = float(np.mean(val_predict == val_target))
+	print " - val_acc: %f - val_f1: %f - val_precision: %f - val_recall %f" %(val_acc, val_f1, val_precision, val_recall)
 
-
+	return {'loss': -val_acc, 'status': STATUS_OK, 'model': merged_model}
 
 # Data processing ---------------------------------
 """
@@ -296,9 +321,9 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, pkl_file):
 
 def main(args):
 	# TODO: update to true data file
-	# raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
-	# raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
-	# raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
 	pkl_file = 'aug_data/approach1/grouped.pkl'
 
 	# pkl_file = 'aug_data/approach1_toy/grouped_test.pkl'
@@ -373,7 +398,6 @@ def main(args):
 		elif args.approach == 2:
 			# TODO
 			return
-
 
 if __name__ == "__main__":
 	# Prepare command line flags
