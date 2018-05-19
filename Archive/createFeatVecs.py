@@ -139,7 +139,7 @@ def get_power_labels_and_indices_thread(d_threads, d_emails):
   thread_contents = []
   # Go through each thread to update features
   for i in range(0, CONST_NUM_THREADS):
-    thread_contents_map = {}  # (sender_id, recipient_id): all email text shared between these parties
+    thread_contents_map = {}  # (sender_id, recipient_id)
     thread = d_threads[str(i)]
     for thread_node in thread["thread_nodes"]:
       message_id = thread_node.get("message_id", None)
@@ -200,6 +200,101 @@ def get_power_labels_and_indices_thread(d_threads, d_emails):
 
   print "# labels: %d, # thread_contents: %d" % (len(labels), len(thread_contents))
   return labels, thread_contents
+
+def get_power_labels_and_indices_thread_1(d_threads, d_emails):
+  """Return power labels for each thread; each thread will be split by the # of interacting partipant pairs"""
+  emails_map = {}  # Assume there is a map from email u_id to the email content
+  labels_map = {}
+
+  for i in range(0, CONST_NUM_EMAILS):
+    email = d_emails[str(i)]
+    emails_map[email["uid"]] = email
+  print "Finished creating map for all 276279 emails!!"
+
+  # Read in dominance tuples file in the form of (boss, subordinate): immediate?
+  with open('Columbia_Enron_DominanceTuples.csv') as file:
+    d_reader = csv.reader(file, delimiter=",")
+    rows_read = 0
+    for row in d_reader:
+      if rows_read != 0:
+        cur_key1 = (int(row[0]), int(row[1])) # (dom_id, sub_id)
+        cur_key2 = (int(row[1]), int(row[0])) # (sub_id, dom_id)
+        if cur_key1 not in labels_map:
+          labels_map[cur_key1] = 0
+        if cur_key2 not in labels_map:
+          labels_map[cur_key2] = 1
+      rows_read += 1
+
+  # Generate ordered lists for labels and email_contents
+  labels = []
+  thread_contents_1 = []
+  thread_contents_2 = []
+  # Go through each thread to update features
+  for i in range(0, CONST_NUM_THREADS):
+    thread_contents_map = {}  # (sender_id, recipient_id)
+    thread = d_threads[str(i)]
+    for thread_node in thread["thread_nodes"]:
+      message_id = thread_node.get("message_id", None)
+      if message_id is None:
+        print "The thread node %s does not have a message id" % thread_node["uid"]
+        continue
+      print "Message id of thread node is %d" % message_id
+
+      email = emails_map.get(message_id, None)  # Not sure if message id is the same as uid of the email?
+
+      # check valid email
+      if email is None:
+        print "message id does not exist"
+        continue
+
+      # check from
+      if "from" not in email:
+        continue
+      sender = email["from"]
+      if sender is None:
+        continue
+
+      # check to
+      if "recipients" not in email:
+        continue
+      recipients = email["recipients"]
+      if recipients is None:
+        continue
+
+      # check valid text content
+      if "subject" not in email and "body" not in email:
+        continue
+
+      # Prepare content of the email
+      content = ""
+      if "subject" in email:
+        content += email["subject"]
+      if "body" in email:
+        content += " " + email["body"]
+      content = content.encode('utf-8').replace('\n', '')
+
+      # Generate features for each recipient of email
+      for j in range(0, len(recipients)):
+        cur_key = (int(sender), int(recipients[j]))
+
+        # Check if we know the correct power relation for this (sender, recipient) pair
+        if cur_key in labels_map:
+          if cur_key in thread_contents_map:
+            # Append to existing email contents for this (sender, recipient) pair
+            thread_contents_map[cur_key] = thread_contents_map[cur_key] + content
+          else:
+            # Create new entry for this (sender, recipient) pair
+            thread_contents_map[cur_key] = content
+
+    for cur_key in thread_contents_map: # for each pair found in emails
+      switch_key = (cur_key[1], cur_key[0])
+      if switch_key in thread_contents_map:
+        labels.append(labels_map[cur_key])
+        thread_contents_1.append(thread_contents_map[cur_key])
+        thread_contents_2.append(thread_contents_map[switch_key])
+
+  print "# labels: %d, # thread_contents_1: %d, # thread_contents_2: %d" % (len(labels), len(thread_contents_1), len(thread_contents_2))
+  return labels, thread_contents_1, thread_contents_2
 
 def get_power_labels_and_indices_grouped(d_emails):
   """Returns power labels for each (sender, recipient) pair"""
@@ -679,6 +774,7 @@ def process_command_line():
   parser.add_argument('--thread', dest='is_thread', type=bool, default=False, help='Analyzes email text on the thread-level')
   parser.add_argument('--new_grouped_1', dest="is_grouped_1", type=bool, default=False, help='Alternating (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_grouped_2', dest="is_grouped_2", type=bool, default=False, help='Individualized (sender, recipient) and (recipient, sender) emails ')
+  parser.add_argument('--new_thread_1', dest='is_thread_1', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups')
   args = parser.parse_args()
   return args
 
@@ -689,9 +785,9 @@ def main():
 
   # Generates power labels and indices per thread
   if args.is_thread:
-    with open('./emails_fixed.json') as file:
+    with open('enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
-    with open('./threads_fixed.json') as file:
+    with open('enron_database/threads_fixed.json') as file:
       d_threads = json.load(file)
     thread_labels, thread_content = get_power_labels_and_indices_thread(d_threads, d_emails)
     print "Finished getting power labels and indices for thread."
@@ -705,6 +801,28 @@ def main():
     np.save("thread_labels.npy", thread_labels)
     np.savetxt("thread_labels.txt", thread_labels)
 
+  if args.is_thread_1:
+    with open('enron_database/emails_fixed.json') as file:
+      d_emails = json.load(file)
+    with open('enron_database/threads_fixed.json') as file:
+      d_threads = json.load(file)
+    thread_labels, thread_content_1, thread_content_2 = get_power_labels_and_indices_thread_1(d_threads, d_emails)
+    print "Finished getting power labels and indices for thread."
+
+    # Save thread contents
+    thread_content_1 = np.array(thread_content_1)
+    np.save("thread_content_1.npy", thread_content_1)
+    # with open('thread_content_1.txt','wb') as f:
+    #     np.savetxt(f, thread_content_1, delimiter='\n', fmt="%s")
+
+    thread_content_2 = np.array(thread_content_2)
+    np.save("thread_content_2.npy", thread_content_2)
+    with open('thread_content_2.txt','wb') as f:
+        np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
+
+    np.save("thread_labels_approach_1.npy", thread_labels)
+    np.savetxt("thread_labels_approach_1.txt", thread_labels)
+
    # Produces bag-of-words features
   if args.is_bow:
     with open('./enron_database/emails_fixed.json') as file:
@@ -716,15 +834,15 @@ def main():
         labels, email_contents, avgNumRecipients, avgNumTokensPerEmail = get_power_labels_and_indices_grouped(d_emails)
         print "Finished getting power labels and indices!"
 
+        # save labels
+        np.save('labels_grouped.npy', labels)
+        np.savetxt('labels_grouped.txt', labels)
+
         # save email_contents
         email_contents = np.array(email_contents)
         np.save('email_contents_grouped.npy', email_contents)
         with open('email_contents_grouped.txt','wb') as f:
           np.savetxt(f, email_contents, delimiter='\n', fmt="%s")
-
-        # save labels
-        np.save('labels_grouped.npy', labels)
-        np.savetxt('labels_grouped.txt', labels)
 
         avgNumRecipients = np.array(avgNumRecipients)
         np.save('avg_num_recipients.npy', avgNumRecipients)
@@ -763,12 +881,12 @@ def main():
         np.savetxt('avg_num_tokens_per_email_2.txt', avgNumTokensPerEmail_2)
 
         # save email_contents
-        email_contents = np.array(email_contents_1)
+        email_contents_1 = np.array(email_contents_1)
         np.save('email_contents_grouped_1.npy', email_contents_1)
         # with open('email_contents_grouped_1.txt','wb') as f:
         #   np.savetxt(f, email_contents_1, delimiter='\n', fmt="%s")
 
-        email_contents = np.array(email_contents_2)
+        email_contents_1 = np.array(email_contents_2)
         np.save('email_contents_grouped_2.npy', email_contents_2)
         with open('email_contents_grouped_2.txt','wb') as f:
           np.savetxt(f, email_contents_2, delimiter='\n', fmt="%s")
