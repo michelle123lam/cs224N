@@ -13,8 +13,11 @@ Generate Approach 1 data:
 Run Approach 1 LSTM:
 	python ./augmented_LSTM_CNN.py --approach=1 --model=LSTM
 """
+
 import argparse
 import numpy as np
+import tensorflow as tf
+import random as rn
 import pickle
 
 from keras.models import Sequential, Model
@@ -24,6 +27,10 @@ from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 from keras.callbacks import Callback
+from keras import backend as K
+import os
+os.environ['PYTHONHASHSEED'] = '0'
+
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
 from hyperas import optim
@@ -32,6 +39,23 @@ from hyperopt import Trials, STATUS_OK, rand, tpe
 
 from nltk import tokenize
 
+# Set Theano backend
+# def set_keras_backend(backend):
+
+#     if K.backend() != backend:
+#         os.environ['KERAS_BACKEND'] = backend
+#         reload(K)
+#         assert K.backend() == backend
+
+# set_keras_backend("theano")
+
+# Random seed
+np.random.seed(1)
+tf.set_random_seed(2)
+rn.seed(3)
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
 
 # Metrics wrapper
 class Metrics(Callback):
@@ -156,7 +180,7 @@ def AugCNN1_full_data():
 		data = pickle.load(f)
 	num_filters=32
 	batch_size=30
-	num_epochs=10
+	num_epochs=20
 	strides=(1, 1)
 	activation='relu'
 	max_email_words=50
@@ -175,8 +199,8 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 
 	# Merge CNNs
 	merged = concatenate([CNN_a, CNN_b])
-	# dropout_layer = Dropout({{uniform(0, 1)}})(merged) # dropout = fraction of input units to drop
-	dropout_layer = Dropout(dropout)(merged)
+	dropout_layer = Dropout({{uniform(0, 1)}})(merged) # dropout = fraction of input units to drop
+	# dropout_layer = Dropout(dropout)(merged)
 	
 	# Softmax classification
 	dense_out = Dense(1, activation='sigmoid')(dropout_layer)
