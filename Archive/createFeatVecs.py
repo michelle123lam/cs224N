@@ -809,6 +809,9 @@ def main():
     thread_labels, thread_content_1, thread_content_2 = get_power_labels_and_indices_thread_1(d_threads, d_emails)
     print "Finished getting power labels and indices for thread."
 
+    np.save("thread_labels_approach_1.npy", thread_labels)
+    np.savetxt("thread_labels_approach_1.txt", thread_labels)
+
     # Save thread contents
     thread_content_1 = np.array(thread_content_1)
     np.save("thread_content_1.npy", thread_content_1)
@@ -819,9 +822,6 @@ def main():
     np.save("thread_content_2.npy", thread_content_2)
     with open('thread_content_2.txt','wb') as f:
         np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
-
-    np.save("thread_labels_approach_1.npy", thread_labels)
-    np.savetxt("thread_labels_approach_1.txt", thread_labels)
 
    # Produces bag-of-words features
   if args.is_bow:
