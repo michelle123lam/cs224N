@@ -13,8 +13,11 @@ Generate Approach 1 data:
 Run Approach 1 LSTM:
 	python ./augmented_LSTM_CNN.py --approach=1 --model=LSTM
 """
+
 import argparse
 import numpy as np
+import tensorflow as tf
+import random as rn
 import pickle
 
 from keras.models import Sequential, Model
@@ -24,6 +27,10 @@ from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
 from keras.callbacks import Callback
+from keras import backend as K
+import os
+os.environ['PYTHONHASHSEED'] = '0'
+
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
 from hyperas import optim
@@ -32,6 +39,23 @@ from hyperopt import Trials, STATUS_OK, rand, tpe
 
 from nltk import tokenize
 
+# Set Theano backend
+# def set_keras_backend(backend):
+
+#     if K.backend() != backend:
+#         os.environ['KERAS_BACKEND'] = backend
+#         reload(K)
+#         assert K.backend() == backend
+
+# set_keras_backend("theano")
+
+# Random seed
+np.random.seed(1)
+tf.set_random_seed(2)
+rn.seed(3)
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
 
 # Metrics wrapper
 class Metrics(Callback):
@@ -61,9 +85,9 @@ def AugLSTM1_full_data():
 	with open(pkl_file, 'rb') as f:
 		data = pickle.load(f)
 	output_dim = 100
-	dropout = 0.2
+	dropout = 0.3 # Tuned!
 	batch_size=30
-	num_epochs=10
+	num_epochs=50
 	max_email_words=50
 	word_vec_dim=100
 	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim
@@ -87,7 +111,7 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	# Softmax classification
 	dense_out = Dense(1, activation='sigmoid')(merged)
 	merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
-	merged_model.compile(optimizer={{choice(['rmsprop', 'adam', 'sgd'])}}, loss='binary_crossentropy', metrics=['accuracy'])
+	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print("Compiled merged_model!")
 
 	# Fit model
@@ -96,6 +120,7 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 		np.array(data['train']['x'])[:,1,:,:]], 
 		np.array(data['train']['y']),
 		batch_size=batch_size,
+		# epochs={{choice([10, 20, 50])}},
 		epochs=num_epochs,
 		validation_data=(
 			[np.array(data['dev']['x'])[:,0,:,:], 
@@ -146,7 +171,7 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
 	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
 	flatten = Flatten()(concatenated_tensor)
-	
+
 	return cur_input, flatten
 
 def AugCNN1_full_data():
@@ -155,7 +180,7 @@ def AugCNN1_full_data():
 		data = pickle.load(f)
 	num_filters=32
 	batch_size=30
-	num_epochs=10
+	num_epochs=20
 	strides=(1, 1)
 	activation='relu'
 	max_email_words=50
@@ -175,6 +200,7 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	# Merge CNNs
 	merged = concatenate([CNN_a, CNN_b])
 	dropout_layer = Dropout({{uniform(0, 1)}})(merged) # dropout = fraction of input units to drop
+	# dropout_layer = Dropout(dropout)(merged)
 	
 	# Softmax classification
 	dense_out = Dense(1, activation='sigmoid')(dropout_layer)
@@ -189,6 +215,7 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		np.array(data['train']['x'])[:,1,:,:,np.newaxis]], 
 		np.array(data['train']['y']),
 		batch_size=batch_size,
+		# epochs={{choice([10, 20, 50])}},
 		epochs=num_epochs,
 		validation_data=(
 			[np.array(data['dev']['x'])[:,0,:,:,np.newaxis], 
@@ -355,44 +382,55 @@ def main(args):
 
 	    # Approach 1 model
 		if args.approach == 1:
+			# Approach 1 LSTM
 			if args.model == 'LSTM':
 				print("Running Approach 1 LSTM!")
-				print("trainX shape:", np.shape(data['train']['x']))
-				print("trainY shape:", np.shape(data['train']['y']))
-				print("devX shape:", np.shape(data['dev']['x']))
-				print("sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:]))
+				# print("trainX shape:", np.shape(data['train']['x']))
+				# print("trainY shape:", np.shape(data['train']['y']))
+				# print("devX shape:", np.shape(data['dev']['x']))
+				# print("sliced trainX shape:", np.shape(np.array(data['train']['x'])[:,0,:,:]))
+				if args.tuneParams:
+					# Hyperparameter tuning
+					best_run, best_model = optim.minimize(
+						model=AugLSTM1_full,
+						data=AugLSTM1_full_data,
+						algo=rand.suggest,
+						max_evals=5,
+						trials=Trials())
+					print("best_run:", best_run)
+				else:
+					AugLSTM1_full(data,
+						output_dim=100,
+						dropout=0.3,
+						batch_size=30,
+						num_epochs=50,
+						max_email_words=50,
+						word_vec_dim=100)
 
-				# Hyperparameter tuning
-				best_run, best_model = optim.minimize(
-					model=AugLSTM1_full,
-					data=AugLSTM1_full_data,
-					algo=rand.suggest,
-					max_evals=5,
-					trials=Trials())
-				print("best_run:", best_run)
-
-				# AugLSTM1_full(data,
-				# 	batch_size=30,
-				# 	num_epochs=10)
-
+			# Approach 1 CNN
 			elif args.model == 'CNN':
 				print("Running Approach 1 CNN!")
-				# Hyperparameter tuning
-				functions=[get_CNN]
-				best_run, best_model = optim.minimize(
-					model=AugCNN1_full,
-					data=AugCNN1_full_data,
-					functions=functions,
-					algo=rand.suggest,
-					max_evals=5,
-					trials=Trials())
-				print("best_run:", best_run)
-				# print("Evaluation of best performing model:")
-			 	# print(best_model.evaluate(X_test, Y_test))
-
-				# AugCNN1_full(data,
-				# 	batch_size=2,
-				# 	num_epochs=10)
+				if args.tuneParams:
+					# Hyperparameter tuning
+					functions=[get_CNN]
+					best_run, best_model = optim.minimize(
+						model=AugCNN1_full,
+						data=AugCNN1_full_data,
+						functions=functions,
+						algo=rand.suggest,
+						max_evals=5,
+						trials=Trials())
+					print("best_run:", best_run)
+				else:
+					AugCNN1_full(data,
+						num_filters=32,
+						batch_size=30,
+						num_epochs=20,
+						strides=(1, 1),
+						activation='relu',
+						max_email_words=50,
+						word_vec_dim=100,
+						dropout=0.2)
 
 		# Approach 2 model
 		elif args.approach == 2:
@@ -402,9 +440,10 @@ def main(args):
 if __name__ == "__main__":
 	# Prepare command line flags
 	parser = argparse.ArgumentParser(description='Run augmented LSTM or CNN models')
-	parser.add_argument('--prepareData', type=bool, default=False, help='prepare data for the model (default=False)')
+	parser.add_argument('--prepareData', type=bool, default=False, help='whether to prepare data for the model (default=False)')
 	parser.add_argument('--approach', type=int, default=1, help="which number approach to use (default=1)")
 	parser.add_argument('--model', type=str, default='LSTM', help="which model to use (default=LSTM)")
+	parser.add_argument('--tuneParams', type=bool, default=False, help="whether to tune hyperparams with hyperas (default=False)")
 
 	args = parser.parse_args()
 	main(args)
