@@ -181,15 +181,15 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	print "Fitted merged_model!"
 
 	# Evaluate model
-	val_predict = np.asarray(merged_model.predict(x_test)).round()
-	val_target = np.array(data['test']['y'])
-	val_f1 = f1_score(val_target, val_predict)
-	val_recall = recall_score(val_target, val_predict)
-	val_precision = precision_score(val_target, val_predict)
-	val_acc = float(np.mean(val_predict == val_target))
-	print " - val_acc: %f - val_f1: %f - val_precision: %f - val_recall %f" %(val_acc, val_f1, val_precision, val_recall)
+	test_predict = np.asarray(merged_model.predict(x_test)).round()
+	test_target = np.array(data['test']['y'])
+	test_f1 = f1_score(test_target, test_predict)
+	test_recall = recall_score(test_target, test_predict)
+	test_precision = precision_score(test_target, test_predict)
+	test_acc = float(np.mean(test_predict == test_target))
+	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
 
-	return {'loss': -val_acc, 'status': STATUS_OK, 'model': merged_model}
+	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
 
 # AugCNN: Approach 1 ---------------------------------
 def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50, word_vec_dim=100):
@@ -326,15 +326,15 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	print "Fitted merged_model!"
 
 	# Evaluate model
-	val_predict = np.asarray(merged_model.predict(x_test)).round()
-	val_target = np.array(data['test']['y'])
-	val_f1 = f1_score(val_target, val_predict)
-	val_recall = recall_score(val_target, val_predict)
-	val_precision = precision_score(val_target, val_predict)
-	val_acc = float(np.mean(val_predict == val_target))
-	print " - val_acc: %f - val_f1: %f - val_precision: %f - val_recall %f" %(val_acc, val_f1, val_precision, val_recall)
+	test_predict = np.asarray(merged_model.predict(x_test)).round()
+	test_target = np.array(data['test']['y'])
+	test_f1 = f1_score(test_target, test_predict)
+	test_recall = recall_score(test_target, test_predict)
+	test_precision = precision_score(test_target, test_predict)
+	test_acc = float(np.mean(test_predict == test_target))
+	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
 
-	return {'loss': -val_acc, 'status': STATUS_OK, 'model': merged_model}
+	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
 
 # Data processing ---------------------------------
 """
@@ -549,7 +549,7 @@ def main(args):
 					AugCNN1_full(data,
 						num_filters=32,
 						batch_size=30,
-						num_epochs=100,
+						num_epochs=90,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
