@@ -463,12 +463,18 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	return split_data
 
 def main(args):
-	# Data files
-	raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
-	raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
-	raw_y_file = 'aug_data/approach1/labels_grouped.npy'
-	# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
-	pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
+	# TODO: update to true data file
+	if args.thread:
+		raw_xa_file = 'aug_data/approach1/thread_content_1.npy'
+		raw_xb_file = 'aug_data/approach1/thread_content_2.npy'
+		raw_y_file = 'aug_data/approach1/thread_labels_approach_1.npy'
+		pkl_file = 'aug_data/approach1/thread.pkl'
+	else:
+		raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+		raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+		raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+		# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
+		pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
 
 	# Non-lexical feature file names
 	# (excluding "_1.npy" or "_2.npy" portion)
@@ -476,6 +482,7 @@ def main(args):
 
 	# Prepare train/dev/test data
 	if args.prepareData:
+		print(raw_xa_file)
 		# Approach 1 data
 		if args.approach == 1:
 			print("Preparing Approach 1 data!")
@@ -498,7 +505,6 @@ def main(args):
 		"""
 		with open(pkl_file, 'rb') as f:
 		    data = pickle.load(f)
-
 	    # Approach 1 model
 		if args.approach == 1:
 			# Approach 1 LSTM
@@ -569,6 +575,7 @@ if __name__ == "__main__":
 	parser.add_argument('--approach', type=int, default=1, help="which number approach to use (default=1)")
 	parser.add_argument('--model', type=str, default='LSTM', help="which model to use (default=LSTM)")
 	parser.add_argument('--tuneParams', type=bool, default=False, help="whether to tune hyperparams with hyperas (default=False)")
+	parser.add_argument('--thread', type=bool, default=False, help="whether to use thread data or grouped data")
 	parser.add_argument('--useNonLex', type=bool, default=False, help="whether to use non-lexical (structural) features (default=False)")
 
 	args = parser.parse_args()
