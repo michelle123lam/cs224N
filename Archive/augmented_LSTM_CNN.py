@@ -827,6 +827,11 @@ def main(args):
 		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
 		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
 		pkl_file = 'aug_data/approach2/grouped_100.pkl'
+	elif args.thread and args.approach == 2:
+		raw_xa_file = 'aug_data/approach2/thread_contents_grouped_1_individual.npy'
+		raw_xb_file = 'aug_data/approach2/thread_contents_grouped_2_individual.npy'
+		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
+		pkl_file = 'aug_data/approach2/thread_labels_100.pkl'
 
 	# Non-lexical feature file names
 	# (excluding "_1.npy" or "_2.npy" portion)
