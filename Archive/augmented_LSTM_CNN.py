@@ -663,6 +663,10 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	return split_data
 
 def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file):
+	max_num_emails = 5
+	max_email_words = 100
+	word_vec_dim = 100
+
 	data = {}
 	data['x'] = []
 	data['y'] = []
@@ -697,34 +701,53 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	n_pairs = 0
 
 	a_emails_aggregated = []
-	a_emails = None
+	a_emails = np.zeros(max_num_emails + 1)
 	for line_number in range(lines_in_xa):
 		if raw_xa[line_number] == "---":
 			# Keep track of number of pairs
 			n_pairs += 1
-			a_emails_aggregated.append(a_emails)
-			a_emails = None
-		else:
-			if np.any(a_emails) and a_emails.size:
-				a_email = get_vectorized_email(raw_xa[line_number], wordVectors)
-				np.vstack((a_emails, a_email))
+			if a_emails.shape[0] < max_num_emails:
+				result = np.zeros((max_num_emails, max_email_words, word_vec_dim))
+				result[:a_emails.shape[0], :a_emails.shape[1], :a_emails.shape[2]] = a_emails
+				a_emails_aggregated.append(result)
 			else:
-				a_emails = get_vectorized_email(raw_xa[line_number], wordVectors)
+				a_emails_aggregated.append(a_emails)
+			#print(a_emails.shape)
+			a_emails = np.zeros(max_num_emails + 1)
+		else:
+			if a_emails.shape[0] == max_num_emails:
+				continue
+			if not np.array_equal(a_emails, np.zeros(max_num_emails + 1)):
+				#print(a_emails.shape)
+				a_email = np.expand_dims(get_vectorized_email(raw_xa[line_number], wordVectors, max_email_words, word_vec_dim), axis=0)
+				#print(a_email.shape)
+				a_emails = np.vstack((a_emails, a_email))
+			else:
+				email_vec = np.expand_dims(get_vectorized_email(raw_xa[line_number], wordVectors, max_email_words, word_vec_dim), axis=0)
+				a_emails = email_vec
 
 	print "a_emails shape:", np.shape(a_emails) # TEMP
 	b_emails_aggregated = []
-	b_emails = None
+	b_emails = np.zeros(max_num_emails + 1)
 	for line_number in range(lines_in_xb):
 		if raw_xb[line_number] == "---":
-			b_emails_aggregated.append(b_emails)
-			b_emails = None
-		else:
-			if np.any(b_emails) and b_emails.size:
-				b_email = get_vectorized_email(raw_xb[line_number], wordVectors)
-				np.vstack((b_emails, b_email))
+			if b_emails.shape[0] < max_num_emails:
+				result = np.zeros((max_num_emails, max_email_words, word_vec_dim))
+				result[:b_emails.shape[0], :b_emails.shape[1]] = b_emails
+				b_emails_aggregated.append(result)
 			else:
-				b_emails = get_vectorized_email(raw_xb[line_number], wordVectors)
-	print "b_emails shape:", np.shape(b_emails) # TEMP
+				b_emails_aggregated.append(b_emails)
+			b_emails = np.zeros(max_num_emails + 1)
+		else:
+			if b_emails.shape[0] == max_num_emails:
+				continue
+			if not np.array_equal(b_emails, np.zeros(max_num_emails + 1)):
+				b_email = np.expand_dims(get_vectorized_email(raw_xb[line_number], wordVectors, max_email_words, word_vec_dim), axis=0)
+				b_emails = np.vstack((b_emails, b_email))
+			else:
+				email_vec = np.expand_dims(get_vectorized_email(raw_xb[line_number], wordVectors, max_email_words, word_vec_dim), axis=0)
+				b_emails = email_vec
+
 	for line_number in range(n_pairs):
 		data['x'].append([a_emails_aggregated[line_number], b_emails_aggregated[line_number]])
 		data['y'].append([raw_y[line_number]])
@@ -732,8 +755,6 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 			data['non_lex'][feat_name].append(
 				[raw_non_lex_feats[feat_name][0][line_number],
 				raw_non_lex_feats[feat_name][1][line_number]])
-	print "data['x'] shape", np.shape(data['x']) # TEMP
-	print len(data['x'][0])
 
 	print("Read in data!")
 
@@ -785,6 +806,7 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 		pickle.dump(split_data, f)
 	print("Saved data!")
 
+	#print(np.array(split_data['train']['x']).shape)
 	return split_data
 
 def main(args):
