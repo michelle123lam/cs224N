@@ -187,7 +187,6 @@ def get_approach2_lex_input(data, split, max_emails, isCNN=False):
 			if isCNN:
 				cur_email = np.array(data[split]['x'])[:,person_i,email_i,:,:,np.newaxis]
 			else:
-				print "data[split]['x'] shape", np.shape(np.array(data[split]['x']))
 				cur_email = np.array(data[split]['x'])[:,person_i,email_i,:,:]
 			
 			lex_input.append(cur_email)
@@ -242,9 +241,15 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 		x_train_lex = get_approach2_lex_input(data, 'train', max_emails)
 		x_dev_lex = get_approach2_lex_input(data, 'dev', max_emails)
 		x_test_lex = get_approach2_lex_input(data, 'test', max_emails)
-		x_train = x_train_lex + data_nonlex['train'][0] + data_nonlex['train'][1]
-		x_dev = x_dev_lex + data_nonlex['dev'][0] + data_nonlex['dev'][1]
-		x_test = x_test_lex + data_nonlex['test'][0] + data_nonlex['test'][1]
+		x_train = x_train_lex
+		x_train.append(data_nonlex['train'][0])
+		x_train.append(data_nonlex['train'][1])
+		x_dev = x_dev_lex
+		x_dev.append(data_nonlex['dev'][0])
+		x_dev.append(data_nonlex['dev'][1])
+		x_test = x_test_lex
+		x_test.append(data_nonlex['test'][0])
+		x_test.append(data_nonlex['test'][1])
 
 	else:
 		# Just use lexical features
@@ -488,9 +493,19 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		x_train_lex = get_approach2_lex_input(data, 'train', max_emails, isCNN=True)
 		x_dev_lex = get_approach2_lex_input(data, 'dev', max_emails, isCNN=True)
 		x_test_lex = get_approach2_lex_input(data, 'test', max_emails, isCNN=True)
-		x_train = x_train_lex + data_nonlex['train'][0] + data_nonlex['train'][1]
-		x_dev = x_dev_lex + data_nonlex['dev'][0] + data_nonlex['dev'][1]
-		x_test = x_test_lex + data_nonlex['test'][0] + data_nonlex['test'][1]
+
+		# x_train = x_train_lex
+		# x_train.append(data_nonlex['train'][0])
+		# x_train.append(data_nonlex['train'][1])
+		x_train = x_train_lex
+		x_train.append(data_nonlex['train'][0])
+		x_train.append(data_nonlex['train'][1])
+		x_dev = x_dev_lex
+		x_dev.append(data_nonlex['dev'][0])
+		x_dev.append(data_nonlex['dev'][1])
+		x_test = x_test_lex
+		x_test.append(data_nonlex['test'][0])
+		x_test.append(data_nonlex['test'][1])
 
 	else:
 		# Just use words
@@ -924,7 +939,7 @@ def main(args):
 			# Approach 2 LSTM
 			if args.model == 'LSTM':
 				print("Running Approach 2 LSTM!")
-				print "pkl_file:", pkl_file
+				print("trainX shape:", np.shape(data['train']['x']))
 				if args.tuneParams:
 					# Hyperparameter tuning
 					best_run, best_model = optim.minimize(
@@ -939,7 +954,7 @@ def main(args):
 						output_dim=100,
 						dropout=0.3,
 						batch_size=30,
-						num_epochs=50, # 50
+						num_epochs=10, # 50
 						max_email_words=100,
 						word_vec_dim=100,
 						use_non_lex=args.useNonLex)
@@ -962,7 +977,7 @@ def main(args):
 					AugCNN2_full(data,
 						num_filters=32,
 						batch_size=30,
-						num_epochs=90,
+						num_epochs=30,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
