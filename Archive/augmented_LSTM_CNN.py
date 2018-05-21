@@ -180,15 +180,38 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
 
 # AugLSTM: Approach 2 ---------------------------------
-def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100, use_non_lex=True):
+def get_approach2_lex_input(split, max_emails, isCNN=False):
+	lex_input = []
+	for person_i in range(2):
+		for email_i in range(max_emails):
+			if isCNN:
+				cur_email = np.array(data[split]['x'])[:,person_i,email_i,:,:,np.newaxis]
+			else:
+				cur_email = np.array(data[split]['x'])[:,person_i,email_i,:,:]
+			
+			lex_input.append(cur_email)
+	return lex_input
+
+def get_LSTM(input_shape, output_dim):
+	cur_input = Input(shape=input_shape, dtype='float32')
+	cur_LSTM = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_a)
+	return cur_input, cur_LSTM
+
+def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=10, max_email_words=50, word_vec_dim=100, use_non_lex=True, max_emails=5):
 	input_shape=(max_email_words, word_vec_dim)
 
 	# Create LSTMs
-	input_a = Input(shape=input_shape, dtype='float32')
-	LSTM_a = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_a)
-
-	input_b = Input(shape=input_shape, dtype='float32')
-	LSTM_b = LSTM(output_dim, input_shape=input_shape, dropout=dropout)(input_b)
+	inputs_a = []
+	inputs_b = []
+	LSTMs_a = []
+	LSTMs_b = []
+	for i in range(max_emails):
+		input_a, LSTM_a = get_LSTM(input_shape, output_dim)
+		input_b, LSTM_b = get_LSTM(input_shape, output_dim)
+		inputs_a.append(input_a)
+		inputs_b.append(input_b)
+		LSTMs_a.append(LSTM_a)
+		LSTMs_b.append(LSTM_b)
 
 	if use_non_lex:
 		# Merge non-lexical features with each LSTM
@@ -196,29 +219,27 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 		data_nonlex, input_nonlex_a, input_nonlex_b, non_lex_features_a, non_lex_features_b = get_nonlex(data)
 
 		# Merge LSTMs
-		merged = concatenate([LSTM_a, non_lex_features_a, LSTM_b, non_lex_features_b])
+		LSTMs_and_nonlex_ab = LSTMs_a + LSTMs_b + non_lex_features_a + non_lex_features_b
+		inputs_and_nonlex_ab = inputs_a + inputs_b + input_nonlex_a + input_nonlex_b
+		merged = concatenate(LSTMs_and_nonlex_ab)
 		merged_dense = Dense(32, activation='relu')(merged)
 	
 		# Softmax classification
 		dense_out = Dense(1, activation='sigmoid')(merged_dense)
-		merged_model = Model(inputs=[input_a, input_nonlex_a, input_b, input_nonlex_b], outputs=[dense_out])
+		merged_model = Model(inputs=inputs_and_nonlex_ab, outputs=[dense_out])
 
 		# Prepare input data
-		print "nl:", np.shape(np.array(data_nonlex['dev'])[0])
-		print "x:", np.shape(np.array(data['dev']['x'])[:,0,:,:])
-		print "y:", np.shape(np.array(data['dev']['y']))
-		x_train = [np.array(data['train']['x'])[:,0,:,:],
-			data_nonlex['train'][0], 
-			np.array(data['train']['x'])[:,1,:,:], 
-			data_nonlex['train'][1]]
-		x_dev = [np.array(data['dev']['x'])[:,0,:,:], 
-			data_nonlex['dev'][0],
-			np.array(data['dev']['x'])[:,1,:,:], 
-			data_nonlex['dev'][1]]
-		x_test = [np.array(data['test']['x'])[:,0,:,:],
-			data_nonlex['test'][0],
-			np.array(data['test']['x'])[:,1,:,:],
-			data_nonlex['test'][1]]
+		# print "nl:", np.shape(np.array(data_nonlex['dev'])[0])
+		# print "x:", np.shape(np.array(data['dev']['x'])[:,0,:,:])
+		# print "y:", np.shape(np.array(data['dev']['y']))
+		# data['train']['x'] dimensions: (num_batches, a or b index, max_emails, max_email_words, word_vec_dim)
+		# Expected input: A emails, B emails, A non-lex, B non-lex
+		x_train_lex = get_approach2_lex_input('train', max_emails)
+		x_dev_lex = get_approach2_lex_input('dev', max_emails)
+		x_test_lex = get_approach2_lex_input('test', max_emails)
+		x_train = x_train_lex + data_nonlex['train'][0] + data_nonlex['train'][1]
+		x_dev = x_dev_lex + data_nonlex['dev'][0] + data_nonlex['dev'][1]
+		x_test = x_test_lex + data_nonlex['test'][0] + data_nonlex['test'][1]
 
 	else:
 		# Just use lexical features
@@ -231,12 +252,10 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 		merged_model = Model(inputs=[input_a, input_b], outputs=[dense_out])
 
 		# Prepare input data
-		x_train = [np.array(data['train']['x'])[:,0,:,:],
-			np.array(data['train']['x'])[:,1,:,:]]
-		x_dev = [np.array(data['dev']['x'])[:,0,:,:], 
-			np.array(data['dev']['x'])[:,1,:,:]]
-		x_test = [np.array(data['test']['x'])[:,0,:,:],
-			np.array(data['test']['x'])[:,1,:,:]]
+		# Expected input: A emails, B emails
+		x_train = get_approach2_lex_input('train', max_emails)
+		x_dev = get_approach2_lex_input('dev', max_emails)
+		x_test = get_approach2_lex_input('test', max_emails)
 
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print("Compiled merged_model!")
@@ -454,9 +473,10 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		# print "x:", np.shape(np.array(data['dev']['x'])[:,0,:,:])
 		# print "y:", np.shape(np.array(data['dev']['y']))
 		# data['train']['x'] dimensions: (num_batches, a or b index, max_emails, max_email_words, word_vec_dim, 1)
-		x_train_lex = [np.array(data['train']['x'])[:,0,i,:,:,np.newaxis] for i in range(max_emails)]
-		x_dev_lex = [np.array(data['dev']['x'])[:,0,i,:,:,np.newaxis] for i in range(max_emails)]
-		x_test_lex = [np.array(data['test']['x'])[:,0,i,:,:,np.newaxis] for i in range(max_emails)]
+		# Expected input: A emails, B emails, A non-lex, B non-lex
+		x_train_lex = get_approach2_lex_input('train', max_emails, isCNN=True)
+		x_dev_lex = get_approach2_lex_input('dev', max_emails, isCNN=True)
+		x_test_lex = get_approach2_lex_input('test', max_emails, isCNN=True)
 		x_train = x_train_lex + data_nonlex['train'][0] + data_nonlex['train'][1]
 		x_dev = x_dev_lex + data_nonlex['dev'][0] + data_nonlex['dev'][1]
 		x_test = x_test_lex + data_nonlex['test'][0] + data_nonlex['test'][1]
@@ -475,9 +495,10 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		merged_model = Model(inputs=inputs_ab, outputs=[dense_out])
 
 		# Prepare input data
-		x_train = [np.array(data['train']['x'])[:,0,i,:,:,np.newaxis] for i in range(max_emails)]
-		x_dev = [np.array(data['dev']['x'])[:,0,i,:,:,np.newaxis] for i in range(max_emails)]
-		x_test = [np.array(data['test']['x'])[:,0,i,:,:,np.newaxis] for i in range(max_emails)]
+		# Expected input: A emails, B emails
+		x_train = get_approach2_lex_input('train', max_emails, isCNN=True)
+		x_dev = get_approach2_lex_input('dev', max_emails, isCNN=True)
+		x_test = get_approach2_lex_input('test', max_emails, isCNN=True)
 
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 	print("Compiled merged_model!")
