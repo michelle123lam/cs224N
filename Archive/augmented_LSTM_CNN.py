@@ -81,14 +81,14 @@ metrics = Metrics()
 
 # AugLSTM: Approach 1 ---------------------------------
 def AugLSTM1_full_data():
-	pkl_file = 'aug_data/approach1/grouped.pkl'
+	pkl_file = 'aug_data/approach1/grouped_100.pkl'
 	with open(pkl_file, 'rb') as f:
 		data = pickle.load(f)
 	output_dim = 100
 	dropout = 0.3 # Tuned!
 	batch_size=30
 	num_epochs=50
-	max_email_words=50
+	max_email_words=100
 	word_vec_dim=100
 	use_non_lex=True
 	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim, use_non_lex
@@ -162,7 +162,8 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	# Fit model
 	merged_model.fit(x_train, np.array(data['train']['y']),
 		batch_size=batch_size,
-		epochs=num_epochs,
+		# epochs=num_epochs,
+		epochs={{choice([10, 20, 50])}},
 		validation_data=(x_dev, np.array(data['dev']['y'])),
 		# callbacks=[metrics]
 		)
@@ -177,9 +178,23 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	test_acc = float(np.mean(test_predict == test_target))
 	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
 
-	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
+	return {'loss': -test_f1, 'status': STATUS_OK, 'model': merged_model}
 
 # AugLSTM: Approach 2 ---------------------------------
+def AugLSTM2_full_data():
+	pkl_file = 'aug_data/approach2/grouped_100.pkl'
+	with open(pkl_file, 'rb') as f:
+		data = pickle.load(f)
+	output_dim = 100
+	dropout = 0.3
+	batch_size=30 # -
+	num_epochs=50 # -
+	max_email_words=100
+	word_vec_dim=100
+	use_non_lex=True
+	max_emails=5
+	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim, use_non_lex, max_emails
+
 def get_approach2_lex_input(data, split, max_emails, isCNN=False):
 	lex_input = []
 	for person_i in range(2):
@@ -206,8 +221,8 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	LSTMs_a = []
 	LSTMs_b = []
 	for i in range(max_emails):
-		input_a, LSTM_a = get_LSTM(input_shape, output_dim, dropout)
-		input_b, LSTM_b = get_LSTM(input_shape, output_dim, dropout)
+		input_a, LSTM_a = get_LSTM(input_shape, output_dim, dropout) # Tuning
+		input_b, LSTM_b = get_LSTM(input_shape, output_dim, dropout) # Tuning
 		inputs_a.append(input_a)
 		inputs_b.append(input_b)
 		LSTMs_a.append(LSTM_a)
@@ -275,8 +290,10 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 
 	# Fit model
 	merged_model.fit(x_train, np.array(data['train']['y']),
-		batch_size=batch_size,
-		epochs=num_epochs,
+		batch_size={{choice([10, 30, 50])}}, # Tuning
+		# batch_size=batch_size,
+		epochs={{choice([10, 20, 30])}}, # Tuning
+		# epochs=num_epochs,
 		validation_data=(x_dev, np.array(data['dev']['y'])),
 		# callbacks=[metrics]
 		)
@@ -291,7 +308,7 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	test_acc = float(np.mean(test_predict == test_target))
 	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
 
-	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
+	return {'loss': -test_f1, 'status': STATUS_OK, 'model': merged_model}
 
 # AugCNN: Approach 1 ---------------------------------
 def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50, word_vec_dim=100):
@@ -342,7 +359,7 @@ def get_nonlex(data):
 	return data_nonlex, input_nonlex_a, input_nonlex_b, non_lex_features_a, non_lex_features_b
 
 def AugCNN1_full_data():
-	pkl_file = 'aug_data/approach1/grouped.pkl'
+	pkl_file = 'aug_data/approach1/grouped_100.pkl'
 	with open(pkl_file, 'rb') as f:
 		data = pickle.load(f)
 	num_filters=32
@@ -350,10 +367,10 @@ def AugCNN1_full_data():
 	num_epochs=10
 	strides=(1, 1)
 	activation='relu'
-	max_email_words=50
+	max_email_words=100
 	word_vec_dim=100
 	dropout=0.5
-	use_non_lex=True
+	use_non_lex=False
 	return data, num_filters, batch_size, num_epochs, strides, activation, max_email_words, word_vec_dim, dropout, use_non_lex
 
 """
@@ -441,9 +458,25 @@ def AugCNN1_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	test_acc = float(np.mean(test_predict == test_target))
 	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
 
-	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
+	return {'loss': -test_f1, 'status': STATUS_OK, 'model': merged_model}
 
 # AugCNN: Approach 2 ---------------------------------
+def AugCNN2_full_data():
+	pkl_file = 'aug_data/approach2/grouped_100.pkl'
+	with open(pkl_file, 'rb') as f:
+		data = pickle.load(f)
+	num_filters=32 # -
+	batch_size=30 # -
+	num_epochs=10 # -
+	strides=(1, 1)
+	activation='relu'
+	max_email_words=100
+	word_vec_dim=100
+	dropout=0.5 # -
+	use_non_lex=True
+	max_emails=5
+	return data, num_filters, batch_size, num_epochs, strides, activation, max_email_words, word_vec_dim, dropout, use_non_lex, max_emails
+
 def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100, dropout=0.2, use_non_lex=True, max_emails=5):
 
 	# Get all of person A's emails; get all of B's emails
@@ -458,8 +491,10 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	CNNs_a = []
 	CNNs_b = []
 	for i in range(max_emails):
-		input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
-		input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		input_a, CNN_a = get_CNN({{choice([16, 24, 32])}}, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim) # Tuning
+		input_b, CNN_b = get_CNN({{choice([16, 24, 32])}}, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim) # Tuning
+		# input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		# input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
 		inputs_a.append(input_a)
 		inputs_b.append(input_b)
 		CNNs_a.append(CNN_a)
@@ -478,7 +513,8 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		inputs_and_nonlex_ab.append(input_nonlex_b)
 		merged = concatenate(CNNs_and_nonlex_ab)
 		merged_dense = Dense(32, activation=activation)(merged)
-		dropout_layer = Dropout(dropout)(merged_dense)
+		dropout_layer = Dropout({{choice([0.2, 0.3, 0.4])}})(merged_dense) # Tuning
+		# dropout_layer = Dropout(dropout)(merged_dense)
 
 		# Softmax classification
 		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
@@ -514,7 +550,8 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		inputs_ab = inputs_a + inputs_b
 		merged = concatenate(CNNs_ab)
 		merged_dense = Dense(32, activation=activation)(merged)
-		dropout_layer = Dropout(dropout)(merged_dense)
+		dropout_layer = Dropout({{choice([0.1, 0.2, 0.3])}})(merged_dense)
+		# dropout_layer = Dropout(dropout)(merged_dense)
 	
 		# Softmax classification
 		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
@@ -531,8 +568,10 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 
 	# Fit model
 	merged_model.fit(x_train, np.array(data['train']['y']),
-		batch_size=batch_size,
-		epochs=num_epochs,
+		batch_size={{choice([10, 30, 50])}}, # Tuning
+		# batch_size=batch_size,
+		epochs={{choice([50, 75, 100])}}, # Tuning
+		# epochs=num_epochs,
 		validation_data=(x_dev, np.array(data['dev']['y'])),
 			#callbacks=[metrics]
 			)
@@ -547,7 +586,7 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	test_acc = float(np.mean(test_predict == test_target))
 	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
 
-	return {'loss': -test_acc, 'status': STATUS_OK, 'model': merged_model}
+	return {'loss': -test_f1, 'status': STATUS_OK, 'model': merged_model}
 
 
 
@@ -886,9 +925,11 @@ def main(args):
 				print "non_lex test shape:", np.shape(np.array(data['test']['non_lex']['avg_num_tokens_per_email']))
 				if args.tuneParams:
 					# Hyperparameter tuning
+					functions=[get_nonlex]
 					best_run, best_model = optim.minimize(
 						model=AugLSTM1_full,
 						data=AugLSTM1_full_data,
+						functions=functions,
 						algo=rand.suggest,
 						max_evals=5,
 						trials=Trials())
@@ -908,7 +949,7 @@ def main(args):
 				print("Running Approach 1 CNN!")
 				if args.tuneParams:
 					# Hyperparameter tuning
-					functions=[get_CNN]
+					functions=[get_CNN, get_nonlex]
 					best_run, best_model = optim.minimize(
 						model=AugCNN1_full,
 						data=AugCNN1_full_data,
@@ -917,6 +958,14 @@ def main(args):
 						max_evals=5,
 						trials=Trials())
 					print("best_run:", best_run)
+
+					# # Show results of best model
+					# if args.useNonLex:
+					# 	x_test = [np.array(data['test']['x'])[:,0,:,:,np.newaxis], data_nonlex['test'][0], np.array(data['test']['x'])[:,1,:,:,np.newaxis], data_nonlex['test'][1]]
+					# else:
+					# 	x_test = [np.array(data['test']['x'])[:,0,:,:,np.newaxis], np.array(data['test']['x'])[:,1,:,:,np.newaxis]]
+					# y_test = data['test']['y']
+					# best_model.evaluate(x_test, y_test)
 				else:
 					AugCNN1_full(data,
 						num_filters=32,
@@ -937,9 +986,11 @@ def main(args):
 				print("trainX shape:", np.shape(data['train']['x']))
 				if args.tuneParams:
 					# Hyperparameter tuning
+					functions=[get_LSTM, get_nonlex, get_approach2_lex_input]
 					best_run, best_model = optim.minimize(
 						model=AugLSTM2_full,
 						data=AugLSTM2_full_data,
+						functions=functions,
 						algo=rand.suggest,
 						max_evals=5,
 						trials=Trials())
@@ -959,7 +1010,7 @@ def main(args):
 				print("Running Approach 2 CNN!")
 				if args.tuneParams:
 					# Hyperparameter tuning
-					functions=[get_CNN]
+					functions=[get_CNN, get_nonlex, get_approach2_lex_input]
 					best_run, best_model = optim.minimize(
 						model=AugCNN2_full,
 						data=AugCNN2_full_data,
