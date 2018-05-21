@@ -651,19 +651,146 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 
 	return split_data
 
+def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file):
+	data = {}
+	data['x'] = []
+	data['y'] = []
+	data['non_lex'] = {}
+
+	# Load word vectors and tokens
+	with open('aug_data/glove.6B.100d.txt', 'r') as f:
+		wordVectors = {}
+		for line in f:
+			values = line.split()
+			word = values[0]
+			coefs = np.asarray(values[1:], dtype='float32')
+			wordVectors[word] = coefs
+	print("Loaded GloVe!")
+
+	# Load npy file
+	raw_xa = np.load(raw_xa_file)
+	raw_xb = np.load(raw_xb_file)
+	raw_y = np.load(raw_y_file)
+	raw_non_lex_feats = {}
+	for file_prefix in non_lex_feats_files:
+		feat_name = file_prefix.split('/')[-1] # last part of filename
+		raw_non_lex_feats[feat_name] = [
+			np.load(file_prefix + '_1.npy'),
+			np.load(file_prefix + '_2.npy')
+		]
+		data['non_lex'][feat_name] = []
+
+	# Separate A's and B's emails for each pairing
+	lines_in_xa = len(raw_xa)
+	lines_in_xb = len(raw_xb)
+	n_pairs = 0
+
+	a_emails_aggregated = []
+	a_emails = None
+	for line_number in range(lines_in_xa):
+		if raw_xa[line_number] == "---":
+			# Keep track of number of pairs
+			n_pairs += 1
+			a_emails_aggregated.append(a_emails)
+			a_emails = None
+		else:
+			if np.any(a_emails) and a_emails.size:
+				a_email = get_vectorized_email(raw_xa[line_number], wordVectors)
+				np.vstack((a_emails, a_email))
+			else:
+				a_emails = get_vectorized_email(raw_xa[line_number], wordVectors)
+
+	b_emails_aggregated = []
+	b_emails = None
+	for line_number in range(lines_in_xb):
+		if raw_xb[line_number] == "---":
+			b_emails_aggregated.append(b_emails)
+			b_emails = None
+		else:
+			if np.all(b_emails) and b_emails.size:
+				b_email = get_vectorized_email(raw_xb[line_number], wordVectors)
+				np.vstack((b_emails, b_email))
+			else:
+				b_emails = get_vectorized_email(raw_xb[line_number], wordVectors)
+
+	for line_number in range(n_pairs):
+		data['x'].append([a_emails_aggregated[line_number], b_emails_aggregated[line_number]])
+		data['y'].append([raw_y[line_number]])
+		for feat_name in raw_non_lex_feats:
+			data['non_lex'][feat_name].append(
+				[raw_non_lex_feats[feat_name][0][line_number],
+				raw_non_lex_feats[feat_name][1][line_number]])
+	print len(data['x'][0])
+
+	print("Read in data!")
+
+	# Shuffle data
+	np.random.seed(10)
+	shuffle_indices = np.random.permutation(np.arange(n_pairs))
+	data['x'] = [data['x'][i] for i in shuffle_indices]
+	data['y'] = [data['y'][i] for i in shuffle_indices]
+	for feat_name in raw_non_lex_feats:
+		data['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in shuffle_indices]
+	print("Shuffled data!")
+
+	# Split into train/dev/test
+	train = 0.6
+	dev = 0.2
+	test = 0.2
+	train_cutoff = int(0.6 * n_pairs)
+	dev_cutoff = int(0.8 * n_pairs)
+	test_cutoff = n_pairs
+
+	split_data = {
+		'train': {},
+		'dev': {},
+		'test': {},
+	}
+	# X input
+	split_data['train']['x'] = [data['x'][i] for i in range(train_cutoff)]
+	split_data['dev']['x'] = [data['x'][i] for i in range(train_cutoff, dev_cutoff)]
+	split_data['test']['x'] = [data['x'][i] for i in range(dev_cutoff, test_cutoff)]
+	# Y input
+	split_data['train']['y'] = [data['y'][i] for i in range(train_cutoff)]
+	split_data['dev']['y'] = [data['y'][i] for i in range(train_cutoff, dev_cutoff)]
+	split_data['test']['y'] = [data['y'][i] for i in range(dev_cutoff, test_cutoff)]
+	# Non-lex input
+	split_data['train']['non_lex'] = {}
+	split_data['dev']['non_lex'] = {}
+	split_data['test']['non_lex'] = {}
+	for feat_name in raw_non_lex_feats:
+		split_data['train']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff)]
+		split_data['dev']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff, dev_cutoff)]
+		split_data['test']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(dev_cutoff, test_cutoff)]
+
+	print("Split data!")
+
+	# Save shuffled, split data to pickle
+	with open(pkl_file, 'wb') as f:
+		# print("split_data:", split_data)
+		pickle.dump(split_data, f)
+	print("Saved data!")
+
+	return split_data
+
 def main(args):
 	# TODO: update to true data file
-	if args.thread:
+	if args.thread and args.approach == 1:
 		raw_xa_file = 'aug_data/approach1/thread_content_1.npy'
 		raw_xb_file = 'aug_data/approach1/thread_content_2.npy'
 		raw_y_file = 'aug_data/approach1/thread_labels_approach_1.npy'
 		pkl_file = 'aug_data/approach1/thread.pkl'
-	else:
+	elif not args.thread and args.approach == 1:
 		raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
 		raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
 		raw_y_file = 'aug_data/approach1/labels_grouped.npy'
 		# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
 		pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
+	elif not args.thread and args.approach == 2:
+		raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual.npy'
+		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
+		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
+		pkl_file = 'aug_data/approach2/grouped_100.pkl'
 
 	# Non-lexical feature file names
 	# (excluding "_1.npy" or "_2.npy" portion)
@@ -671,7 +798,6 @@ def main(args):
 
 	# Prepare train/dev/test data
 	if args.prepareData:
-		print(raw_xa_file)
 		# Approach 1 data
 		if args.approach == 1:
 			print("Preparing Approach 1 data!")
@@ -680,7 +806,7 @@ def main(args):
 		# Approach 2 data
 		elif args.approach == 2:
 			print("Preparing Approach 2 data!")
-			return
+			data = processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file)
 
 	# Run model
 	else:
