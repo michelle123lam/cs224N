@@ -577,7 +577,7 @@ def get_power_labels_and_indices_grouped(d_emails):
   print "Avg Num Emails Per Group: " + str(avgNumEmailsPerGroup / float(len(email_contents_map)))
   return labels, email_contents, avgNumRecipients, avgNumTokensPerEmail
 
-def get_power_labels_and_indices_grouped_1(d_emails):
+def get_power_labels_and_indices_grouped_1(d_emails, is_3):
   """Returns power labels for each (sender, recipient) pair"""
   labels_map = {} # (sender_id, recipient_id): label (0 = dom sender, sub recip), (1 = sub sender, dom recip)
   email_contents_map = {} # (sender_id, recipient_id): all email text shared between these parties
@@ -654,19 +654,39 @@ def get_power_labels_and_indices_grouped_1(d_emails):
   usedKeys = {}
   for cur_key in email_contents_map: # for each pair found in emails
     switch_key = (cur_key[1], cur_key[0])
-    if cur_key not in usedKeys and switch_key not in usedKeys and switch_key in email_contents_map:
-      labels.append(labels_map[cur_key])
+    if not is_3:
+      if cur_key not in usedKeys and switch_key not in usedKeys and switch_key in email_contents_map:
+        labels.append(labels_map[cur_key])
 
-      email_contents_1.append(email_contents_map[cur_key][0])
-      email_contents_2.append(email_contents_map[switch_key][0]) #get (recipient, sender) emails
-      avgNumRecipients_1.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
-      avgNumRecipients_2.append(float(email_contents_map[switch_key][1]) / float(email_contents_map[switch_key][3]))
-      avgNumTokensPerEmail_1.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
-      avgNumTokensPerEmail_2.append(float(email_contents_map[switch_key][2]) / float(email_contents_map[switch_key][3]))
-      avgNumEmailsPerGroup_1 += float(email_contents_map[cur_key][3])
-      avgNumEmailsPerGroup_2 += float(email_contents_map[switch_key][3])
-    usedKeys[cur_key] = True
-    usedKeys[switch_key] = True
+        email_contents_1.append(email_contents_map[cur_key][0])
+        email_contents_2.append(email_contents_map[switch_key][0]) #get (recipient, sender) emails
+        avgNumRecipients_1.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
+        avgNumRecipients_2.append(float(email_contents_map[switch_key][1]) / float(email_contents_map[switch_key][3]))
+        avgNumTokensPerEmail_1.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
+        avgNumTokensPerEmail_2.append(float(email_contents_map[switch_key][2]) / float(email_contents_map[switch_key][3]))
+        avgNumEmailsPerGroup_1 += float(email_contents_map[cur_key][3])
+        avgNumEmailsPerGroup_2 += float(email_contents_map[switch_key][3])
+      usedKeys[cur_key] = True
+      usedKeys[switch_key] = True
+    if is_3:
+      if cur_key not in usedKeys and switch_key not in usedKeys:
+        labels.append(labels_map[cur_key])
+        email_contents_1.append(email_contents_map[cur_key][0])
+        avgNumRecipients_1.append(float(email_contents_map[cur_key][1]) / float(email_contents_map[cur_key][3]))
+        avgNumTokensPerEmail_1.append(float(email_contents_map[cur_key][2]) / float(email_contents_map[cur_key][3]))
+        avgNumEmailsPerGroup_1 += float(email_contents_map[cur_key][3])
+        if switch_key in email_contents_map:
+          email_contents_2.append(email_contents_map[switch_key][0])
+          avgNumRecipients_2.append(float(email_contents_map[switch_key][1]) / float(email_contents_map[switch_key][3]))
+          avgNumTokensPerEmail_2.append(float(email_contents_map[switch_key][2]) / float(email_contents_map[switch_key][3]))
+          avgNumEmailsPerGroup_2 += float(email_contents_map[switch_key][3])
+        else:
+          email_contents_2.append("NO_EMAILS")
+          avgNumRecipients_2.append(0)
+          avgNumTokensPerEmail_2.append(0)
+
+      usedKeys[cur_key] = True
+      usedKeys[switch_key] = True
 
   print "# labels: %d, # email_contents: %d" % (len(labels), len(email_contents_1))
   print len(avgNumRecipients_1)
@@ -973,6 +993,7 @@ def process_command_line():
   parser.add_argument('--thread', dest='is_thread', type=bool, default=False, help='Analyzes email text on the thread-level')
   parser.add_argument('--new_grouped_1', dest="is_grouped_1", type=bool, default=False, help='Alternating (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_grouped_2', dest="is_grouped_2", type=bool, default=False, help='Individualized (sender, recipient) and (recipient, sender) emails ')
+  parser.add_argument('--new_grouped_3', dest="is_grouped_3", type=bool, default=False, help='Approach 1 all examples')
   parser.add_argument('--new_thread_1', dest='is_thread_1', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_thread_2', dest='is_thread_2', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email')
   parser.add_argument('--new_thread_3', dest='is_thread_3', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email, handles no B->A email case')
@@ -1099,7 +1120,7 @@ def main():
       elif args.is_grouped_1:
         print "Generating *grouped* features for (sender, recipient) and (recipient, sender) pairs..."
         # Generate features for (sender, recipient) pairs
-        labels, email_contents_1, email_contents_2, avgNumRecipients_1, avgNumRecipients_2, avgNumTokensPerEmail_1, avgNumTokensPerEmail_2, avgNumEmailsPerGroup_1, avgNumEmailsPerGroup_2 = get_power_labels_and_indices_grouped_1(d_emails)
+        labels, email_contents_1, email_contents_2, avgNumRecipients_1, avgNumRecipients_2, avgNumTokensPerEmail_1, avgNumTokensPerEmail_2, avgNumEmailsPerGroup_1, avgNumEmailsPerGroup_2 = get_power_labels_and_indices_grouped_1(d_emails, args.is_grouped_3)
         print "Finished getting power labels and indices!"
 
         # save labels
@@ -1153,6 +1174,43 @@ def main():
           np.savetxt(f, email_contents_2, delimiter='\n', fmt="%s")
         print "Finished saving email_contents and labels to files!"
 
+      elif args.is_grouped_3:
+        print "Generating *grouped and individualized* features for (sender, recipient) and (recipient, sender) pairs..."
+        # Generate features for (sender, recipient) pairs
+        labels, email_contents_1, email_contents_2, avgNumRecipients_1, avgNumRecipients_2, avgNumTokensPerEmail_1, avgNumTokensPerEmail_2, avgNumEmailsPerGroup_1, avgNumEmailsPerGroup_2 = get_power_labels_and_indices_grouped_1(d_emails, args.is_grouped_3)
+        print "Finished getting power labels and indices!"
+
+        # save labels
+        np.save('labels_grouped_approach_1_extended.npy', labels)
+        np.savetxt('labels_grouped_approach_1_extended.txt', labels)
+
+        avgNumRecipients_1 = np.array(avgNumRecipients_1)
+        np.save('avg_num_recipients_extended_1.npy', avgNumRecipients_1)
+        np.savetxt('avg_num_recipients_1_extended.txt', avgNumRecipients_1)
+
+        avgNumRecipients_2 = np.array(avgNumRecipients_2)
+        np.save('avg_num_recipients_extended_2.npy', avgNumRecipients_2)
+        np.savetxt('avg_num_recipients_2_extended.txt', avgNumRecipients_2)
+
+        avgNumTokensPerEmail_1 = np.array(avgNumTokensPerEmail_1)
+        np.save('avg_num_tokens_per_email_extended_1.npy', avgNumTokensPerEmail_1)
+        np.savetxt('avg_num_tokens_per_email_1_extended.txt', avgNumTokensPerEmail_1)
+
+        avgNumTokensPerEmail_2 = np.array(avgNumTokensPerEmail_2)
+        np.save('avg_num_tokens_per_email_extended_2.npy', avgNumTokensPerEmail_2)
+        np.savetxt('avg_num_tokens_per_email_2_extended.txt', avgNumTokensPerEmail_2)
+
+        # save email_contents
+        email_contents_1 = np.array(email_contents_1)
+        np.save('email_contents_grouped_1_extended.npy', email_contents_1)
+        # with open('email_contents_grouped_1_extended.txt','wb') as f:
+        #   np.savetxt(f, email_contents_1, delimiter='\n', fmt="%s")
+
+        email_contents_2 = np.array(email_contents_2)
+        np.save('email_contents_grouped_2_extended.npy', email_contents_2)
+        with open('email_contents_grouped_2_extended.txt','wb') as f:
+          np.savetxt(f, email_contents_2, delimiter='\n', fmt="%s")
+        print "Finished saving email_contents and labels to files!"
       else:
         labels, email_contents, num_recipients_vector, gender_feature_vector = get_power_labels_and_indices(d_emails)
         print "Finished getting power labels and indices!"
