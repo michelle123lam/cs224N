@@ -26,8 +26,10 @@ from keras.layers import Flatten, Dropout
 from keras.layers.core import Dense
 from keras.layers.merge import concatenate
 from keras.layers.recurrent import LSTM
+from keras.layers.wrappers import TimeDistributed
 from keras.callbacks import Callback
 from keras import backend as K
+from keras import regularizers
 import os
 os.environ['PYTHONHASHSEED'] = '0'
 
@@ -290,10 +292,10 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 
 	# Fit model
 	merged_model.fit(x_train, np.array(data['train']['y']),
-		batch_size={{choice([10, 30, 50])}}, # Tuning
-		# batch_size=batch_size,
-		epochs={{choice([10, 20, 30])}}, # Tuning
-		# epochs=num_epochs,
+		# batch_size={{choice([10, 30, 50])}}, # Tuning
+		batch_size=batch_size,
+		# epochs={{choice([10, 20, 30])}}, # Tuning
+		epochs=num_epochs,
 		validation_data=(x_dev, np.array(data['dev']['y'])),
 		# callbacks=[metrics]
 		)
@@ -337,7 +339,9 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
 	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
 	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
+
 	flatten = Flatten()(concatenated_tensor)
+	# flatten = TimeDistributed(Flatten())(concatenated_tensor) # TESTING!
 
 	return cur_input, flatten
 
@@ -491,10 +495,10 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 	CNNs_a = []
 	CNNs_b = []
 	for i in range(max_emails):
-		input_a, CNN_a = get_CNN({{choice([16, 24, 32])}}, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim) # Tuning
-		input_b, CNN_b = get_CNN({{choice([16, 24, 32])}}, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim) # Tuning
-		# input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
-		# input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		# input_a, CNN_a = get_CNN({{choice([16, 24, 32])}}, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim) # Tuning
+		# input_b, CNN_b = get_CNN({{choice([16, 24, 32])}}, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim) # Tuning
+		input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
 		inputs_a.append(input_a)
 		inputs_b.append(input_b)
 		CNNs_a.append(CNN_a)
@@ -512,9 +516,11 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		inputs_and_nonlex_ab.append(input_nonlex_a)
 		inputs_and_nonlex_ab.append(input_nonlex_b)
 		merged = concatenate(CNNs_and_nonlex_ab)
-		merged_dense = Dense(32, activation=activation)(merged)
-		dropout_layer = Dropout({{choice([0.2, 0.3, 0.4])}})(merged_dense) # Tuning
-		# dropout_layer = Dropout(dropout)(merged_dense)
+		merged_dense = Dense(32, activation=activation, 
+			# kernel_regularizer=regularizers.l2(0.01)
+		)(merged) # NEW
+		# dropout_layer = Dropout({{choice([0.2, 0.3, 0.4])}})(merged_dense) # Tuning
+		dropout_layer = Dropout(dropout)(merged_dense)
 
 		# Softmax classification
 		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
@@ -550,8 +556,8 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 		inputs_ab = inputs_a + inputs_b
 		merged = concatenate(CNNs_ab)
 		merged_dense = Dense(32, activation=activation)(merged)
-		dropout_layer = Dropout({{choice([0.1, 0.2, 0.3])}})(merged_dense)
-		# dropout_layer = Dropout(dropout)(merged_dense)
+		# dropout_layer = Dropout({{choice([0.1, 0.2, 0.3])}})(merged_dense)
+		dropout_layer = Dropout(dropout)(merged_dense)
 	
 		# Softmax classification
 		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
@@ -568,10 +574,151 @@ def AugCNN2_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1,
 
 	# Fit model
 	merged_model.fit(x_train, np.array(data['train']['y']),
-		batch_size={{choice([10, 30, 50])}}, # Tuning
-		# batch_size=batch_size,
-		epochs={{choice([50, 75, 100])}}, # Tuning
-		# epochs=num_epochs,
+		# batch_size={{choice([10, 30, 50])}}, # Tuning
+		batch_size=batch_size,
+		# epochs={{choice([50, 75, 100])}}, # Tuning
+		epochs=num_epochs,
+		validation_data=(x_dev, np.array(data['dev']['y'])),
+			#callbacks=[metrics]
+			)
+	print "Fitted merged_model!"
+
+	# Evaluate model
+	test_predict = np.asarray(merged_model.predict(x_test)).round()
+	test_target = np.array(data['test']['y'])
+	test_f1 = f1_score(test_target, test_predict)
+	test_recall = recall_score(test_target, test_predict)
+	test_precision = precision_score(test_target, test_predict)
+	test_acc = float(np.mean(test_predict == test_target))
+	print " - test_acc: %f - test_f1: %f - test_precision: %f - test_recall %f" %(test_acc, test_f1, test_precision, test_recall)
+
+	return {'loss': -test_f1, 'status': STATUS_OK, 'model': merged_model}
+
+
+# AugCNNLSTM: Approach 3 ---------------------------------
+def AugCNNLSTM3_full_data():
+	pkl_file = 'aug_data/approach2/grouped_100.pkl'
+	with open(pkl_file, 'rb') as f:
+		data = pickle.load(f)
+	num_filters=32
+	batch_size=30 # -
+	num_epochs=10 # -
+	strides=(1, 1)
+	activation='relu'
+	max_email_words=100
+	word_vec_dim=100
+	dropout=0.5
+	use_non_lex=True
+	max_emails=5
+	output_dim=100 # -
+	return data, num_filters, batch_size, num_epochs, strides, activation, max_email_words, word_vec_dim, dropout, use_non_lex, max_emails, output_dim
+
+def AugCNNLSTM3_full(data, num_filters=32, batch_size=30, num_epochs=10, strides=(1, 1), activation='relu', max_email_words=50, word_vec_dim=100, dropout=0.2, use_non_lex=True, max_emails=5, output_dim=100):
+	# Get all of person A's emails; get all of B's emails
+	# Generate CNN for each email
+	# Feed CNN outputs to LSTM for person A, person B
+	# Generate non-lex layer for each email
+	# Merge all LSTM and non-lex layers
+	# Dense layer; softmax
+	
+	# Create CNNs
+	inputs_a = []
+	inputs_b = []
+	CNNs_a = []
+	CNNs_b = []
+	for i in range(max_emails):
+		input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		inputs_a.append(input_a)
+		inputs_b.append(input_b)
+		CNNs_a.append(CNN_a)
+		CNNs_b.append(CNN_b)
+
+	# Merge CNNs
+	merged_CNNs_a = concatenate(CNNs_a)
+	merged_CNNs_b = concatenate(CNNs_b)
+
+	# Feed CNNs to LSTM
+	# TODO(michelle): look into dims below!!
+	# LSTM_a_cnns = TimeDistributed(lstm_model)(merged_CNNs_a)
+	# LSTM_b_cnns = TimeDistributed(lstm_model)(merged_CNNs_b)
+	# merged_CNNs_a = TimeDistributed()(concat_CNNs_a)
+	# merged_CNNs_b = TimeDistributed()(concat_CNNs_b)
+
+	# LSTM_a = LSTM({{choice([80, 100, 120])}}, dropout=dropout)(merged_CNNs_a) # Tuning
+	# LSTM_b = LSTM({{choice([80, 100, 120])}}, dropout=dropout)(merged_CNNs_b) # Tuning
+	LSTM_a = LSTM(output_dim, dropout=dropout)(merged_CNNs_a)
+	LSTM_b = LSTM(output_dim, dropout=dropout)(merged_CNNs_b)
+
+	if use_non_lex:
+		# Get non-lexical features
+		data_nonlex, input_nonlex_a, input_nonlex_b, non_lex_features_a, non_lex_features_b = get_nonlex(data)
+
+		# Merge LSTM with non-lex
+		LSTMs_and_nonlex_ab = [LSTM_a, LSTM_b, non_lex_features_a, non_lex_features_b]
+
+		# TODO: check!
+		inputs_and_nonlex_ab = inputs_a + inputs_b
+		inputs_and_nonlex_ab.append(input_nonlex_a)
+		inputs_and_nonlex_ab.append(input_nonlex_b)
+
+		merged_LSTMs = concatenate(LSTMs_and_nonlex_ab)
+		merged_dense = Dense(32, activation=activation)(merged_LSTMs)
+		dropout_layer = Dropout(dropout)(merged_dense)
+
+		# Softmax classification
+		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
+		merged_model = Model(inputs=inputs_and_nonlex_ab, outputs=[dense_out])
+
+		# Prepare input data
+		# data['train']['x'] dimensions: (num_batches, a or b index, max_emails, max_email_words, word_vec_dim, 1)
+		# Expected input: A emails, B emails, A non-lex, B non-lex
+		x_train_lex = get_approach2_lex_input(data, 'train', max_emails, isCNN=True)
+		x_dev_lex = get_approach2_lex_input(data, 'dev', max_emails, isCNN=True)
+		x_test_lex = get_approach2_lex_input(data, 'test', max_emails, isCNN=True)
+
+		x_train = x_train_lex
+		x_train.append(data_nonlex['train'][0])
+		x_train.append(data_nonlex['train'][1])
+		x_dev = x_dev_lex
+		x_dev.append(data_nonlex['dev'][0])
+		x_dev.append(data_nonlex['dev'][1])
+		x_test = x_test_lex
+		x_test.append(data_nonlex['test'][0])
+		x_test.append(data_nonlex['test'][1])
+
+	else:
+		# Just use words
+		# Merge LSTM with non-lex
+		LSTMs_ab = [LSTM_a, LSTM_b]
+
+		# TODO: check!
+		inputs_ab = inputs_a + inputs_b
+
+		merged_LSTMs = concatenate(LSTMs_ab)
+		merged_dense = Dense(32, activation=activation)(merged_LSTMs)
+		dropout_layer = Dropout(dropout)(merged_dense)
+	
+		# Softmax classification
+		dense_out = Dense(1, activation='sigmoid')(dropout_layer)
+		merged_model = Model(inputs=inputs_ab, outputs=[dense_out])
+
+		# Prepare input data
+		# Expected input: A emails, B emails
+		x_train = get_approach2_lex_input(data, 'train', max_emails, isCNN=True)
+		x_dev = get_approach2_lex_input(data, 'dev', max_emails, isCNN=True)
+		x_test = get_approach2_lex_input(data, 'test', max_emails, isCNN=True)
+
+	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+	print("Compiled merged_model!")
+	merged_model.summary()
+
+	# Fit model
+	merged_model.fit(x_train, np.array(data['train']['y']),
+		# batch_size={{choice([15, 30, 45])}}, # Tuning
+		batch_size=batch_size,
+		# epochs={{choice([30, 40, 50, 60])}}, # Tuning
+		epochs=num_epochs,
 		validation_data=(x_dev, np.array(data['dev']['y'])),
 			#callbacks=[metrics]
 			)
@@ -876,7 +1023,7 @@ def main(args):
 		raw_y_file = 'aug_data/approach1/labels_grouped.npy'
 		# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
 		pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
-	elif not args.thread and args.approach == 2:
+	elif not args.thread and (args.approach == 2 or args.approach == 3):
 		raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual.npy'
 		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
 		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
@@ -968,7 +1115,7 @@ def main(args):
 					# best_model.evaluate(x_test, y_test)
 				else:
 					AugCNN1_full(data,
-						num_filters=32,
+						num_filters=32, # 32
 						batch_size=30,
 						num_epochs=90,
 						strides=(1, 1),
@@ -1000,7 +1147,7 @@ def main(args):
 						output_dim=100,
 						dropout=0.3,
 						batch_size=30,
-						num_epochs=10, # 50
+						num_epochs=20, # 50
 						max_email_words=100,
 						word_vec_dim=100,
 						use_non_lex=args.useNonLex)
@@ -1021,15 +1168,44 @@ def main(args):
 					print("best_run:", best_run)
 				else:
 					AugCNN2_full(data,
-						num_filters=32,
-						batch_size=30,
-						num_epochs=30,
+						num_filters=32, # 32
+						batch_size=10, # 30
+						num_epochs=49,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
 						word_vec_dim=100,
 						dropout=0.2,
 						use_non_lex=args.useNonLex)
+
+		# Approach 3 model
+		elif args.approach == 3:
+			# CNN-LSTM model
+			print("Running Approach 3 CNN-LSTM!")
+			print("trainX shape:", np.shape(data['train']['x']))
+			if args.tuneParams:
+				# Hyperparameter tuning
+					functions=[get_CNN, get_nonlex, get_approach2_lex_input]
+					best_run, best_model = optim.minimize(
+						model=AugCNNLSTM3_full,
+						data=AugCNNLSTM3_full_data,
+						functions=functions,
+						algo=rand.suggest,
+						max_evals=5,
+						trials=Trials())
+					print("best_run:", best_run)
+			else:
+				AugCNNLSTM3_full(data,
+						num_filters=32,
+						batch_size=30,
+						num_epochs=40, #30
+						strides=(1, 1),
+						activation='relu',
+						max_email_words=100,
+						word_vec_dim=100,
+						dropout=0.2,
+						use_non_lex=args.useNonLex)
+
 
 if __name__ == "__main__":
 	# Prepare command line flags
