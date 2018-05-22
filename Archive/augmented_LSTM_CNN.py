@@ -326,9 +326,28 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	# l_pool2 = MaxPooling1D(2)(l_cov2)
 	# l_cov3 = Conv1D(128, 2, activation='relu')(l_pool2)
 	# l_pool3 = MaxPooling1D(2)(l_cov3)  # global max pooling
-	# flatten = Flatten()(l_pool3)
+	# flatten = TimeDistributed(Flatten())(l_pool3)
 
-	# 2) Simple Conv2D version
+	# # 2) Simple Conv2D version
+	# conv = Conv2D(num_filters, kernel_size=5, strides=1, activation=activation)(cur_input)
+	# l_cov1= Conv2D(128, 2, activation='relu', padding='valid')(cur_input)
+	# l_pool1 = MaxPool2D(4)(l_cov1)
+	# l_cov2 = Conv2D(128, 2, activation='relu', padding='valid')(l_pool1)
+	# l_pool2 = MaxPool2D(2)(l_cov2)
+	# l_cov3 = Conv2D(128, 2, activation='relu', padding='valid')(l_pool2)
+	# l_pool3 = MaxPool2D(2)(l_cov3)  # global max pooling
+	# flatten = TimeDistributed(Flatten())(l_pool3)
+
+	# # 2b) Second Conv2D version
+	# kernel_size=5
+	# conv = Conv2D(num_filters, kernel_size=kernel_size, strides=1, activation=activation)(cur_input)
+	# l_cov1= Conv2D(num_filters, kernel_size, activation='relu', padding='valid')(cur_input)
+	# l_pool1 = MaxPool2D(kernel_size, padding='valid')(l_cov1)
+	# l_cov2 = Conv2D(num_filters, kernel_size, activation='relu', padding='valid')(l_pool1)
+	# l_pool2 = MaxPool2D(kernel_size, padding='valid')(l_cov2)
+	# # l_cov3 = Conv2D(num_filters, kernel_size, activation='relu', padding='valid')(l_pool2)
+	# # l_pool3 = MaxPool2D(35, padding='valid')(l_cov3)  # global max pooling
+	# flatten = TimeDistributed(Flatten())(l_pool2)
 
 	# 3) Multiple filters version
 	filter_sizes = [3,4,5]
@@ -1223,12 +1242,12 @@ def main(args):
 						num_filters=32,
 						batch_size=20, # 30
 						output_dim=100, # 100
-						num_epochs=70,
+						num_epochs=50,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
 						word_vec_dim=100,
-						dropout=0.2,
+						dropout=0.1,
 						use_non_lex=args.useNonLex)
 
 
