@@ -1085,10 +1085,16 @@ def main(args):
 			pkl_file = 'aug_data/approach1/grouped_200.pkl' # max_email_words=200
 
 	elif not args.thread and (args.approach == 2 or args.approach == 3):
-		raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual.npy'
-		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
-		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
-		pkl_file = 'aug_data/approach2/grouped_100.pkl'
+		if args.fullEmailsGrouped:
+			raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual_extended.npy'
+			raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual_extended.npy'
+			raw_y_file = 'aug_data/approach2/labels_grouped_approach_1_extended.npy'
+			pkl_file = 'aug_data/approach2/grouped_150_extended.pkl'
+		else: 
+			raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual.npy'
+			raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
+			raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
+			pkl_file = 'aug_data/approach2/grouped_100.pkl'
 	elif args.thread and (args.approach == 2 or args.approach == 3):
 		if args.fullEmailsThread:
 			raw_xa_file = 'aug_data/approach2/thread_content_1_individual_extended.npy'
