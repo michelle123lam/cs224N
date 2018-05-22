@@ -695,7 +695,7 @@ def get_power_labels_and_indices_grouped_1(d_emails, is_3):
   print "Avg Num Emails Per Group 2: " + str(avgNumEmailsPerGroup_2 / float(len(email_contents_2)))
   return labels, email_contents_1, email_contents_2, avgNumRecipients_1, avgNumRecipients_2, avgNumTokensPerEmail_1, avgNumTokensPerEmail_2, avgNumEmailsPerGroup_1, avgNumEmailsPerGroup_2
 
-def get_power_labels_and_indices_grouped_2(d_emails):
+def get_power_labels_and_indices_grouped_2(d_emails, is_grouped_4):
   labels_map = {} # (sender_id, recipient_id): label (0 = dom sender, sub recip), (1 = sub sender, dom recip)
   email_contents_map = {} # (sender_id, recipient_id): all email text shared between a sender and recipient pair
 
@@ -765,15 +765,27 @@ def get_power_labels_and_indices_grouped_2(d_emails):
   usedKeys = {}
   for cur_key in email_contents_map: # for each pair found in emails
     switch_key = (cur_key[1], cur_key[0])
-    if cur_key not in usedKeys and switch_key not in usedKeys and switch_key in email_contents_map:
-      labels.append(labels_map[cur_key])
-      for email in email_contents_map[cur_key][0]:
-        email_contents_1.append(email)
-      email_contents_1.append('---')
-      for switch_email in email_contents_map[switch_key][0]:
-        email_contents_2.append(switch_email)
-      email_contents_2.append('---')
-
+    if not is_grouped_4:
+      if cur_key not in usedKeys and switch_key not in usedKeys and switch_key in email_contents_map:
+        labels.append(labels_map[cur_key])
+        for email in email_contents_map[cur_key][0]:
+          email_contents_1.append(email)
+        email_contents_1.append('---')
+        for switch_email in email_contents_map[switch_key][0]:
+          email_contents_2.append(switch_email)
+        email_contents_2.append('---')
+    else: 
+      if cur_key not in usedKeys and switch_key not in usedKeys:
+        labels.append(labels_map[cur_key])
+        for email in email_contents_map[cur_key][0]:
+          email_contents_1.append(email)
+        email_contents_1.append('---')
+        if switch_key in email_contents_map:
+          for switch_email in email_contents_map[switch_key][0]:
+            email_contents_2.append(switch_email)
+        else: 
+          email_contents_2.append('NO_EMAILS')
+        email_contents_2.append('---')
     usedKeys[cur_key] = True
     usedKeys[switch_key] = True
 
@@ -994,9 +1006,10 @@ def process_command_line():
   parser.add_argument('--new_grouped_1', dest="is_grouped_1", type=bool, default=False, help='Alternating (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_grouped_2', dest="is_grouped_2", type=bool, default=False, help='Individualized (sender, recipient) and (recipient, sender) emails ')
   parser.add_argument('--new_grouped_3', dest="is_grouped_3", type=bool, default=False, help='Approach 1 all examples')
+  parser.add_argument('--new_grouped_4', dest="is_grouped_4", type=bool, default=False, help='Approach 1 all examples individualized')
   parser.add_argument('--new_thread_1', dest='is_thread_1', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_thread_2', dest='is_thread_2', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email')
-  parser.add_argument('--new_thread_3', dest='is_thread_3', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email, handles no B->A email case')
+  parser.add_argument('--new_thread_4', dest='is_thread_4', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email, handles no B->A email case')
   args = parser.parse_args()
   return args
 
@@ -1064,7 +1077,7 @@ def main():
     with open('thread_content_2_individual.txt','wb') as f:
         np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
 
-  if args.is_thread_3:
+  if args.is_thread_4:
     with open('enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
     with open('enron_database/threads_fixed.json') as file:
@@ -1209,6 +1222,23 @@ def main():
         email_contents_2 = np.array(email_contents_2)
         np.save('email_contents_grouped_2_extended.npy', email_contents_2)
         with open('email_contents_grouped_2_extended.txt','wb') as f:
+          np.savetxt(f, email_contents_2, delimiter='\n', fmt="%s")
+        print "Finished saving email_contents and labels to files!"
+      elif args.is_grouped_4:
+        print "Generating *grouped and individualized* features for (sender, recipient) and (recipient, sender) pairs..."
+        # Generate features for (sender, recipient) pairs
+        email_contents_1, email_contents_2 = get_power_labels_and_indices_grouped_2(d_emails, args.is_grouped_4)
+        print "Finished getting power labels and indices!"
+
+        # save email_contents
+        email_contents_1 = np.array(email_contents_1)
+        np.save('aug_data/approach2/email_contents_grouped_1_individual_extended.npy', email_contents_1)
+        # with open('email_contents_grouped_1_individual_extended.txt','wb') as f:
+        #   np.savetxt(f, email_contents_1, delimiter='\n', fmt="%s")
+
+        email_contents_2 = np.array(email_contents_2)
+        np.save('aug_data/approach2/email_contents_grouped_2_individual_extended.npy', email_contents_2)
+        with open('email_contents_grouped_2_individual_extended.txt','wb') as f:
           np.savetxt(f, email_contents_2, delimiter='\n', fmt="%s")
         print "Finished saving email_contents and labels to files!"
       else:
