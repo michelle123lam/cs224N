@@ -201,7 +201,7 @@ def get_power_labels_and_indices_thread(d_threads, d_emails):
   print "# labels: %d, # thread_contents: %d" % (len(labels), len(thread_contents))
   return labels, thread_contents
 
-def get_power_labels_and_indices_thread_1(d_threads, d_emails):
+def get_power_labels_and_indices_thread_1(d_threads, d_emails, is_thread_3):
   """Return power labels for each thread; each thread will be split by the # of interacting partipant pairs"""
   emails_map = {}  # Assume there is a map from email u_id to the email content
   labels_map = {}
@@ -288,10 +288,18 @@ def get_power_labels_and_indices_thread_1(d_threads, d_emails):
 
     for cur_key in thread_contents_map: # for each pair found in emails
       switch_key = (cur_key[1], cur_key[0])
-      if switch_key in thread_contents_map:
+      if is_thread_3: 
         labels.append(labels_map[cur_key])
         thread_contents_1.append(thread_contents_map[cur_key])
-        thread_contents_2.append(thread_contents_map[switch_key])
+        if switch_key in thread_contents_map:
+          thread_contents_2.append(thread_contents_map[switch_key])
+        else:
+          thread_contents_2.append("NO_EMAILS")
+      else: 
+        if switch_key in thread_contents_map:
+          labels.append(labels_map[cur_key])
+          thread_contents_1.append(thread_contents_map[cur_key])
+          thread_contents_2.append(thread_contents_map[switch_key])
 
   print "# labels: %d, # thread_contents_1: %d, # thread_contents_2: %d" % (len(labels), len(thread_contents_1), len(thread_contents_2))
   return labels, thread_contents_1, thread_contents_2
@@ -394,7 +402,7 @@ def get_power_labels_and_indices_thread_2(d_threads, d_emails):
   print "# thread_contents_1: %d, # thread_contents_2: %d" % (len(thread_contents_1), len(thread_contents_2))
   return thread_contents_1, thread_contents_2
 
-def get_power_labels_and_indices_thread_3(d_threads, d_emails):
+def get_power_labels_and_indices_thread_4(d_threads, d_emails):
   """Return power labels for each thread; each thread will be split by the # of interacting partipant pairs"""
   emails_map = {}  # Assume there is a map from email u_id to the email content
   labels_map = {}
@@ -1009,6 +1017,7 @@ def process_command_line():
   parser.add_argument('--new_grouped_4', dest="is_grouped_4", type=bool, default=False, help='Approach 1 all examples individualized')
   parser.add_argument('--new_thread_1', dest='is_thread_1', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_thread_2', dest='is_thread_2', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email')
+  parser.add_argument('--new_thread_3', dest='is_thread_3', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups, handles no B->A email case')
   parser.add_argument('--new_thread_4', dest='is_thread_4', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email, handles no B->A email case')
   args = parser.parse_args()
   return args
@@ -1077,12 +1086,34 @@ def main():
     with open('thread_content_2_individual.txt','wb') as f:
         np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
 
+  if args.is_thread_3:
+    with open('enron_database/emails_fixed.json') as file:
+      d_emails = json.load(file)
+    with open('enron_database/threads_fixed.json') as file:
+      d_threads = json.load(file)
+    thread_labels, thread_content_1, thread_content_2 = get_power_labels_and_indices_thread_1(d_threads, d_emails, args.is_thread_3)
+    print "Finished getting power labels and indices for thread."
+
+    np.save("aug_data/approach1/thread_labels_approach_1_extended.npy", thread_labels)
+    np.savetxt("thread_labels_approach_1_extended.txt", thread_labels)
+
+    # Save thread contents
+    thread_content_1 = np.array(thread_content_1)
+    np.save("aug_data/approach1/thread_content_1_extended.npy", thread_content_1)
+    # with open('thread_content_1.txt','wb') as f:
+    #     np.savetxt(f, thread_content_1, delimiter='\n', fmt="%s")
+
+    thread_content_2 = np.array(thread_content_2)
+    np.save("aug_data/approach1/thread_content_2_extended.npy", thread_content_2)
+    with open('thread_content_2_extended.txt','wb') as f:
+        np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
+
   if args.is_thread_4:
     with open('enron_database/emails_fixed.json') as file:
       d_emails = json.load(file)
     with open('enron_database/threads_fixed.json') as file:
       d_threads = json.load(file)
-    labels, thread_content_1, thread_content_2 = get_power_labels_and_indices_thread_3(d_threads, d_emails)
+    labels, thread_content_1, thread_content_2 = get_power_labels_and_indices_thread_4(d_threads, d_emails)
     print "Finished getting power labels and indices for thread."
 
     np.save("thread_labels_extended.npy", labels)
