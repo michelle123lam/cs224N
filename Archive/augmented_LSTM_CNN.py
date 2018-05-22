@@ -362,27 +362,27 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	# flatten = TimeDistributed(Flatten())(l_pool2)
 
 	# 2d) Third Conv2D version (simplest)
-	kernel_size=3
-	l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
-	l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
-	# l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
-	# l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
-	flatten = TimeDistributed(Flatten())(l_pool1)
+	# kernel_size=3
+	# l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
+	# l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
+	# # l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
+	# # l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
+	# flatten = TimeDistributed(Flatten())(l_pool1)
 
 	# 3) Multiple filters version
-	# filter_sizes = [3,4,5]
-	# conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	# conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	# conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	# maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
-	# maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
-	# maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
-	# concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
+	filter_sizes = [3,4,5]
+	conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
+	maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
+	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
+	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
 
-	# if isApproach3:
-	# 	flatten = TimeDistributed(Flatten())(concatenated_tensor)
-	# else:
-	# 	flatten = Flatten()(concatenated_tensor)
+	if isApproach3:
+		flatten = TimeDistributed(Flatten())(concatenated_tensor)
+	else:
+		flatten = Flatten()(concatenated_tensor)
 
 	return cur_input, flatten
 
@@ -1074,7 +1074,7 @@ def main(args):
 		if args.fullEmailsGrouped:
 			raw_xa_file = 'aug_data/approach1/email_contents_grouped_1_extended.npy'
 			raw_xb_file = 'aug_data/approach1/email_contents_grouped_2_extended.npy'
-			raw_y_file = 'labels_grouped_approach_1_extended.npy'
+			raw_y_file = 'aug_data/approach1/labels_grouped_approach_1_extended.npy'
 			pkl_file = 'aug_data/approach1/grouped_150.pkl' # max_email_words=150
 		else: 
 			raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
@@ -1089,7 +1089,7 @@ def main(args):
 		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
 		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
 		pkl_file = 'aug_data/approach2/grouped_100.pkl'
-	elif args.thread and args.approach == 2:
+	elif args.thread and (args.approach == 2 or args.approach == 3):
 		if args.fullEmailsThread:
 			raw_xa_file = 'aug_data/approach2/thread_content_1_individual_extended.npy'
 			raw_xb_file = 'aug_data/approach2/thread_content_2_individual_extended.npy'
@@ -1115,9 +1115,9 @@ def main(args):
 			print("Preparing Approach 1 data!")
 			data = processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file)
 
-		# Approach 2 data
-		elif args.approach == 2:
-			print("Preparing Approach 2 data!")
+		# Approach 2 and 3 data
+		elif args.approach == 2 or args.approach == 3:
+			print("Preparing Approach ", args.approach, " data!")
 			data = processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file)
 
 	# Run model
@@ -1195,7 +1195,7 @@ def main(args):
 						num_epochs=90,
 						strides=(1, 1),
 						activation='relu',
-						max_email_words=200,
+						max_email_words=150,
 						word_vec_dim=100,
 						dropout=0.2,
 						use_non_lex=args.useNonLex)
@@ -1274,7 +1274,7 @@ def main(args):
 						num_filters=32,
 						batch_size=20, # 30
 						output_dim=100, # 100
-						num_epochs=90,
+						num_epochs=70,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
