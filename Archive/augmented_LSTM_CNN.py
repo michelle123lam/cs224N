@@ -794,6 +794,8 @@ Vectorizes email text data
 """
 def get_vectorized_email(email, wordVectors, max_email_words=100, word_vec_dim=100):
 	result = np.zeros((max_email_words, word_vec_dim))
+	if email == "NO_EMAILS":
+		return result
 	words = tokenize.word_tokenize(email.decode('utf-8'))
 	# print "words:", words
 	words = words[:max_email_words]
@@ -850,8 +852,8 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	n_pairs = len(raw_xa)
 
 	for pair_i in range(n_pairs):
-		a_email = get_vectorized_email(raw_xa[pair_i], wordVectors, max_email_words=200)
-		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors, max_email_words=200)
+		a_email = get_vectorized_email(raw_xa[pair_i], wordVectors, max_email_words=150)
+		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors, max_email_words=150)
 		data['x'].append([a_email, b_email])
 		data['y'].append([raw_y[pair_i]])
 		for feat_name in raw_non_lex_feats:
@@ -911,7 +913,7 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 
 def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file):
 	max_num_emails = 5
-	max_email_words = 100
+	max_email_words = 20
 	word_vec_dim = 100
 
 	data = {}
@@ -1069,12 +1071,19 @@ def main(args):
 		raw_y_file = 'aug_data/approach1/thread_labels_approach_1.npy'
 		pkl_file = 'aug_data/approach1/thread.pkl'
 	elif not args.thread and args.approach == 1:
-		raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
-		raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
-		raw_y_file = 'aug_data/approach1/labels_grouped.npy'
-		# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
-		# pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
-		pkl_file = 'aug_data/approach1/grouped_200.pkl' # max_email_words=200
+		if args.fullEmailsGrouped:
+			raw_xa_file = 'aug_data/approach1/email_contents_grouped_1_extended.npy'
+			raw_xb_file = 'aug_data/approach1/email_contents_grouped_2_extended.npy'
+			raw_y_file = 'labels_grouped_approach_1_extended.npy'
+			pkl_file = 'aug_data/approach1/grouped_150.pkl' # max_email_words=150
+		else: 
+			raw_xa_file = 'aug_data/approach1/email_contents_grouped_1.npy'
+			raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
+			raw_y_file = 'aug_data/approach1/labels_grouped.npy'
+			# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
+			# pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
+			pkl_file = 'aug_data/approach1/grouped_200.pkl' # max_email_words=200
+
 	elif not args.thread and (args.approach == 2 or args.approach == 3):
 		raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual.npy'
 		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
@@ -1085,7 +1094,7 @@ def main(args):
 			raw_xa_file = 'aug_data/approach2/thread_content_1_individual_extended.npy'
 			raw_xb_file = 'aug_data/approach2/thread_content_2_individual_extended.npy'
 			raw_y_file = 'aug_data/approach2/thread_labels_extended.npy'
-			pkl_file = 'aug_data/approach2/thread_labels_100_extended.pkl'
+			pkl_file = 'aug_data/approach2/thread_labels_20_extended.pkl'
 		else:
 			raw_xa_file = 'aug_data/approach2/thread_content_1_individual.npy'
 			raw_xb_file = 'aug_data/approach2/thread_content_2_individual.npy'
@@ -1094,7 +1103,10 @@ def main(args):
 
 	# Non-lexical feature file names
 	# (excluding "_1.npy" or "_2.npy" portion)
-	non_lex_feats_files = ['aug_data/approach1/non_lex_feats/avg_num_recipients', 'aug_data/approach1/non_lex_feats/avg_num_tokens_per_email']
+	if args.fullEmailsGrouped:
+		non_lex_feats_files = ['aug_data/approach1/non_lex_feats/avg_num_recipients_extended', 'aug_data/approach1/non_lex_feats/avg_num_tokens_per_email_extended']
+	else:
+		non_lex_feats_files = ['aug_data/approach1/non_lex_feats/avg_num_recipients', 'aug_data/approach1/non_lex_feats/avg_num_tokens_per_email']
 
 	# Prepare train/dev/test data
 	if args.prepareData:
@@ -1233,10 +1245,10 @@ def main(args):
 					AugCNN2_full(data,
 						num_filters=32, # 32
 						batch_size=10, # 30
-						num_epochs=49,
+						num_epochs=10,
 						strides=(1, 1),
 						activation='relu',
-						max_email_words=100,
+						max_email_words=20,
 						word_vec_dim=100,
 						dropout=0.2,
 						use_non_lex=args.useNonLex)
@@ -1281,6 +1293,7 @@ if __name__ == "__main__":
 	parser.add_argument('--thread', type=bool, default=False, help="whether to use thread data or grouped data")
 	parser.add_argument('--useNonLex', type=bool, default=False, help="whether to use non-lexical (structural) features (default=False)")
 	parser.add_argument('--fullEmailsThread', type=bool, default=False, help="whether to use full thread data or regular thread data")
+	parser.add_argument('--fullEmailsGrouped', type=bool, default=False, help="whether to use full group data or regular thread data")
 
 	args = parser.parse_args()
 	main(args)
