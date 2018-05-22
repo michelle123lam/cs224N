@@ -21,7 +21,7 @@ import random as rn
 import pickle
 
 from keras.models import Sequential, Model
-from keras.layers import Embedding, Input, Conv1D, Conv2D, MaxPool2D, MaxPooling1D, GlobalMaxPooling1D
+from keras.layers import Embedding, Input, Conv1D, Conv2D, MaxPool2D, MaxPooling1D, GlobalMaxPooling1D, MaxPooling2D, GlobalMaxPooling2D
 from keras.layers import Flatten, Dropout
 from keras.layers.core import Dense
 from keras.layers.merge import concatenate
@@ -349,20 +349,40 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	# # l_pool3 = MaxPool2D(35, padding='valid')(l_cov3)  # global max pooling
 	# flatten = TimeDistributed(Flatten())(l_pool2)
 
-	# 3) Multiple filters version
-	filter_sizes = [3,4,5]
-	conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
-	maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
-	maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
-	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
-	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
+	# 2c) Third Conv2D version
+	# kernel_size=3
+	# num_filters=64
+	# conv = Conv2D(num_filters, kernel_size=kernel_size, strides=1, activation=activation)(cur_input)
+	# l_cov1= Conv2D(num_filters, kernel_size, activation='relu', padding='valid')(cur_input)
+	# l_pool1 = MaxPool2D(kernel_size, padding='valid')(l_cov1)
+	# l_cov2 = Conv2D(num_filters, kernel_size, activation='relu', padding='valid')(l_pool1)
+	# l_pool2 = MaxPool2D(kernel_size, padding='valid')(l_cov2)
+	# # l_cov3 = Conv2D(num_filters, kernel_size, activation='relu', padding='valid')(l_pool2)
+	# # l_pool3 = MaxPool2D(35, padding='valid')(l_cov3)  # global max pooling
+	# flatten = TimeDistributed(Flatten())(l_pool2)
 
-	if isApproach3:
-		flatten = TimeDistributed(Flatten())(concatenated_tensor)
-	else:
-		flatten = Flatten()(concatenated_tensor)
+	# 2d) Third Conv2D version (simplest)
+	kernel_size=3
+	l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
+	l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
+	# l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
+	# l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
+	flatten = TimeDistributed(Flatten())(l_pool1)
+
+	# 3) Multiple filters version
+	# filter_sizes = [3,4,5]
+	# conv_0 = Conv2D(num_filters, kernel_size=(filter_sizes[0], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	# conv_1 = Conv2D(num_filters, kernel_size=(filter_sizes[1], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	# conv_2 = Conv2D(num_filters, kernel_size=(filter_sizes[2], word_vec_dim), strides=strides, activation=activation, padding='valid')(cur_input)
+	# maxpool_0 = MaxPool2D(pool_size=(max_email_words - filter_sizes[0] + 1, 1), strides=(1,1), padding='valid')(conv_0)
+	# maxpool_1 = MaxPool2D(pool_size=(max_email_words - filter_sizes[1] + 1, 1), strides=(1,1), padding='valid')(conv_1)
+	# maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
+	# concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
+
+	# if isApproach3:
+	# 	flatten = TimeDistributed(Flatten())(concatenated_tensor)
+	# else:
+	# 	flatten = Flatten()(concatenated_tensor)
 
 	return cur_input, flatten
 
@@ -1242,12 +1262,12 @@ def main(args):
 						num_filters=32,
 						batch_size=20, # 30
 						output_dim=100, # 100
-						num_epochs=50,
+						num_epochs=90,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
 						word_vec_dim=100,
-						dropout=0.1,
+						dropout=0.2,
 						use_non_lex=args.useNonLex)
 
 
