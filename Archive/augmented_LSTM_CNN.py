@@ -35,9 +35,9 @@ os.environ['PYTHONHASHSEED'] = '0'
 
 from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
-from hyperas import optim
-from hyperas.distributions import choice, uniform, conditional
-from hyperopt import Trials, STATUS_OK, rand, tpe
+# from hyperas import optim
+# from hyperas.distributions import choice, uniform, conditional
+# from hyperopt import Trials, STATUS_OK, rand, tpe
 
 from nltk import tokenize
 
@@ -313,7 +313,7 @@ def AugLSTM2_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 	return {'loss': -test_f1, 'status': STATUS_OK, 'model': merged_model}
 
 # AugCNN: Approach 1 ---------------------------------
-def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50, word_vec_dim=100):
+def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50, word_vec_dim=100, isApproach3=False):
 	input_shape=(max_email_words, word_vec_dim, 1)
 	# input_shape=(max_email_words,)
 	cur_input = Input(shape=input_shape, dtype='float32')
@@ -340,8 +340,10 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	maxpool_2 = MaxPool2D(pool_size=(max_email_words - filter_sizes[2] + 1, 1), strides=(1,1), padding='valid')(conv_2)
 	concatenated_tensor = concatenate([maxpool_0, maxpool_1, maxpool_2], axis=1)
 
-	flatten = Flatten()(concatenated_tensor)
-	# flatten = TimeDistributed(Flatten())(concatenated_tensor) # TESTING!
+	if isApproach3:
+		flatten = TimeDistributed(Flatten())(concatenated_tensor)
+	else:
+		flatten = Flatten()(concatenated_tensor)
 
 	return cur_input, flatten
 
@@ -627,8 +629,8 @@ def AugCNNLSTM3_full(data, num_filters=32, batch_size=30, num_epochs=10, strides
 	CNNs_a = []
 	CNNs_b = []
 	for i in range(max_emails):
-		input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
-		input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim)
+		input_a, CNN_a = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim, isApproach3=True)
+		input_b, CNN_b = get_CNN(num_filters, strides, activation, max_email_words=max_email_words, word_vec_dim=word_vec_dim, isApproach3=True)
 		inputs_a.append(input_a)
 		inputs_b.append(input_b)
 		CNNs_a.append(CNN_a)
@@ -663,7 +665,9 @@ def AugCNNLSTM3_full(data, num_filters=32, batch_size=30, num_epochs=10, strides
 		inputs_and_nonlex_ab.append(input_nonlex_b)
 
 		merged_LSTMs = concatenate(LSTMs_and_nonlex_ab)
-		merged_dense = Dense(32, activation=activation)(merged_LSTMs)
+		merged_dense = Dense(32, activation=activation,
+			# kernel_regularizer=regularizers.l2(0.01)
+			)(merged_LSTMs) # TUNING!
 		dropout_layer = Dropout(dropout)(merged_dense)
 
 		# Softmax classification
@@ -710,8 +714,11 @@ def AugCNNLSTM3_full(data, num_filters=32, batch_size=30, num_epochs=10, strides
 		x_test = get_approach2_lex_input(data, 'test', max_emails, isCNN=True)
 
 	merged_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+	# merged_model.compile(optimizer='sgd', loss='binary_crossentropy', metrics=['accuracy'])
+	# merged_model.compile(optimizer='rmsprop', loss='binary_crossentropy', metrics=['accuracy']) # Testing
+
 	print("Compiled merged_model!")
-	merged_model.summary()
+	# merged_model.summary() # TEMP
 
 	# Fit model
 	merged_model.fit(x_train, np.array(data['train']['y']),
@@ -1226,8 +1233,9 @@ def main(args):
 			else:
 				AugCNNLSTM3_full(data,
 						num_filters=32,
-						batch_size=30,
-						num_epochs=30,
+						batch_size=20, # 30
+						output_dim=100, # 100
+						num_epochs=70,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
