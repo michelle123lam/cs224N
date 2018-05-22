@@ -323,6 +323,7 @@ def get_power_labels_and_indices_thread_2(d_threads, d_emails):
   # Generate ordered lists for labels and email_contents
   thread_contents_1 = []
   thread_contents_2 = []
+  labels = []
   # Go through each thread to update features
   for i in range(0, CONST_NUM_THREADS):
     thread_contents_map = {}  # (sender_id, recipient_id)
@@ -392,6 +393,107 @@ def get_power_labels_and_indices_thread_2(d_threads, d_emails):
 
   print "# thread_contents_1: %d, # thread_contents_2: %d" % (len(thread_contents_1), len(thread_contents_2))
   return thread_contents_1, thread_contents_2
+
+def get_power_labels_and_indices_thread_3(d_threads, d_emails):
+  """Return power labels for each thread; each thread will be split by the # of interacting partipant pairs"""
+  emails_map = {}  # Assume there is a map from email u_id to the email content
+  labels_map = {}
+
+  for i in range(0, CONST_NUM_EMAILS):
+    email = d_emails[str(i)]
+    emails_map[email["uid"]] = email
+  print "Finished creating map for all 276279 emails!!"
+
+  # Read in dominance tuples file in the form of (boss, subordinate): immediate?
+  with open('Columbia_Enron_DominanceTuples.csv') as file:
+    d_reader = csv.reader(file, delimiter=",")
+    rows_read = 0
+    for row in d_reader:
+      if rows_read != 0:
+        cur_key1 = (int(row[0]), int(row[1])) # (dom_id, sub_id)
+        cur_key2 = (int(row[1]), int(row[0])) # (sub_id, dom_id)
+        if cur_key1 not in labels_map:
+          labels_map[cur_key1] = 0
+        if cur_key2 not in labels_map:
+          labels_map[cur_key2] = 1
+      rows_read += 1
+
+  # Generate ordered lists for labels and email_contents
+  thread_contents_1 = []
+  thread_contents_2 = []
+  labels = []
+  # Go through each thread to update features
+  for i in range(0, CONST_NUM_THREADS):
+    thread_contents_map = {}  # (sender_id, recipient_id)
+    thread = d_threads[str(i)]
+    for thread_node in thread["thread_nodes"]:
+      message_id = thread_node.get("message_id", None)
+      if message_id is None:
+        print "The thread node %s does not have a message id" % thread_node["uid"]
+        continue
+      print "Message id of thread node is %d" % message_id
+
+      email = emails_map.get(message_id, None)  # Not sure if message id is the same as uid of the email?
+
+      # check valid email
+      if email is None:
+        print "message id does not exist"
+        continue
+
+      # check from
+      if "from" not in email:
+        continue
+      sender = email["from"]
+      if sender is None:
+        continue
+
+      # check to
+      if "recipients" not in email:
+        continue
+      recipients = email["recipients"]
+      if recipients is None:
+        continue
+
+      # check valid text content
+      if "subject" not in email and "body" not in email:
+        continue
+
+      # Prepare content of the email
+      content = ""
+      if "subject" in email:
+        content += email["subject"]
+      if "body" in email:
+        content += " " + email["body"]
+      content = content.encode('utf-8').replace('\n', '')
+
+      # Generate features for each recipient of email
+      for j in range(0, len(recipients)):
+        cur_key = (int(sender), int(recipients[j]))
+
+        # Check if we know the correct power relation for this (sender, recipient) pair
+        if cur_key in labels_map:
+          if cur_key in thread_contents_map:
+            # Append to existing email contents for this (sender, recipient) pair
+            thread_contents_map[cur_key] = thread_contents_map[cur_key] + [content]
+          else:
+            # Create new entry for this (sender, recipient) pair
+            thread_contents_map[cur_key] = [content]
+
+    for cur_key in thread_contents_map: # for each pair found in emails
+      labels.append(labels_map[cur_key])
+      switch_key = (cur_key[1], cur_key[0])
+      for email in thread_contents_map[cur_key]:
+        thread_contents_1.append(email)
+      thread_contents_1.append('---')
+      if switch_key in thread_contents_map:
+        for switch_email in thread_contents_map[switch_key]:
+          thread_contents_2.append(switch_email)
+      else:
+        thread_contents_2.append('NO_EMAILS')
+      thread_contents_2.append('---')
+
+  print "#labels: %d, # thread_contents_1: %d, # thread_contents_2: %d" % (len(labels), len(thread_contents_1), len(thread_contents_2))
+  return labels, thread_contents_1, thread_contents_2
 
 def get_power_labels_and_indices_grouped(d_emails):
   """Returns power labels for each (sender, recipient) pair"""
@@ -873,6 +975,7 @@ def process_command_line():
   parser.add_argument('--new_grouped_2', dest="is_grouped_2", type=bool, default=False, help='Individualized (sender, recipient) and (recipient, sender) emails ')
   parser.add_argument('--new_thread_1', dest='is_thread_1', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups')
   parser.add_argument('--new_thread_2', dest='is_thread_2', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email')
+  parser.add_argument('--new_thread_3', dest='is_thread_3', type=bool, default=False, help='Analyzes email text on the thread-level - both (sender, recipient) and (recipient, sender) groups separated by individual email, handles no B->A email case')
   args = parser.parse_args()
   return args
 
@@ -938,6 +1041,28 @@ def main():
     thread_content_2 = np.array(thread_content_2)
     np.save("thread_content_2_individual.npy", thread_content_2)
     with open('thread_content_2_individual.txt','wb') as f:
+        np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
+
+  if args.is_thread_3:
+    with open('enron_database/emails_fixed.json') as file:
+      d_emails = json.load(file)
+    with open('enron_database/threads_fixed.json') as file:
+      d_threads = json.load(file)
+    labels, thread_content_1, thread_content_2 = get_power_labels_and_indices_thread_3(d_threads, d_emails)
+    print "Finished getting power labels and indices for thread."
+
+    np.save("thread_labels_extended.npy", labels)
+    np.savetxt("thread_labels_extended.txt", labels)
+
+    # Save thread contents
+    thread_content_1 = np.array(thread_content_1)
+    np.save("thread_content_1_individual_extended.npy", thread_content_1)
+    # with open('thread_content_1_individual_extended.txt','wb') as f:
+    #     np.savetxt(f, thread_content_1, delimiter='\n', fmt="%s")
+
+    thread_content_2 = np.array(thread_content_2)
+    np.save("thread_content_2_individual_extended.npy", thread_content_2)
+    with open('thread_content_2_individual_extended.txt','wb') as f:
         np.savetxt(f, thread_content_2, delimiter='\n', fmt="%s")
 
    # Produces bag-of-words features

@@ -618,8 +618,8 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	n_pairs = len(raw_xa)
 
 	for pair_i in range(n_pairs):
-		a_email = get_vectorized_email(raw_xa[pair_i], wordVectors)
-		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors)
+		a_email = get_vectorized_email(raw_xa[pair_i], wordVectors, max_email_words=200)
+		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors, max_email_words=200)
 		data['x'].append([a_email, b_email])
 		data['y'].append([raw_y[pair_i]])
 		for feat_name in raw_non_lex_feats:
@@ -701,14 +701,14 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	raw_xa = np.load(raw_xa_file)
 	raw_xb = np.load(raw_xb_file)
 	raw_y = np.load(raw_y_file)
-	raw_non_lex_feats = {}
-	for file_prefix in non_lex_feats_files:
-		feat_name = file_prefix.split('/')[-1] # last part of filename
-		raw_non_lex_feats[feat_name] = [
-			np.load(file_prefix + '_1.npy'),
-			np.load(file_prefix + '_2.npy')
-		]
-		data['non_lex'][feat_name] = []
+	# raw_non_lex_feats = {}
+	# for file_prefix in non_lex_feats_files:
+	# 	feat_name = file_prefix.split('/')[-1] # last part of filename
+	# 	raw_non_lex_feats[feat_name] = [
+	# 		np.load(file_prefix + '_1.npy'),
+	# 		np.load(file_prefix + '_2.npy')
+	# 	]
+	# 	data['non_lex'][feat_name] = []
 
 	# Separate A's and B's emails for each pairing
 	lines_in_xa = len(raw_xa)
@@ -741,11 +741,12 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 				email_vec = np.expand_dims(get_vectorized_email(raw_xa[line_number], wordVectors, max_email_words, word_vec_dim), axis=0)
 				a_emails = email_vec
 
-	print "a_emails shape:", np.shape(a_emails) # TEMP
 	b_emails_aggregated = []
 	b_emails = np.zeros(max_num_emails + 1)
+	n_pairs = 0
 	for line_number in range(lines_in_xb):
 		if raw_xb[line_number] == "---":
+			n_pairs += 1
 			if b_emails.shape[0] < max_num_emails:
 				result = np.zeros((max_num_emails, max_email_words, word_vec_dim))
 				result[:b_emails.shape[0], :b_emails.shape[1]] = b_emails
@@ -754,6 +755,10 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 				b_emails_aggregated.append(b_emails)
 			b_emails = np.zeros(max_num_emails + 1)
 		else:
+			# if there are no corresponding emails
+			if raw_xb[line_number] == "NO_EMAILS":
+				b_emails = np.zeros((max_num_emails, max_email_words, word_vec_dim))
+				continue
 			if b_emails.shape[0] == max_num_emails:
 				continue
 			if not np.array_equal(b_emails, np.zeros(max_num_emails + 1)):
@@ -766,10 +771,10 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	for line_number in range(n_pairs):
 		data['x'].append([a_emails_aggregated[line_number], b_emails_aggregated[line_number]])
 		data['y'].append([raw_y[line_number]])
-		for feat_name in raw_non_lex_feats:
-			data['non_lex'][feat_name].append(
-				[raw_non_lex_feats[feat_name][0][line_number],
-				raw_non_lex_feats[feat_name][1][line_number]])
+		# for feat_name in raw_non_lex_feats:
+		# 	data['non_lex'][feat_name].append(
+		# 		[raw_non_lex_feats[feat_name][0][line_number],
+		# 		raw_non_lex_feats[feat_name][1][line_number]])
 
 	print("Read in data!")
 
@@ -778,8 +783,8 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	shuffle_indices = np.random.permutation(np.arange(n_pairs))
 	data['x'] = [data['x'][i] for i in shuffle_indices]
 	data['y'] = [data['y'][i] for i in shuffle_indices]
-	for feat_name in raw_non_lex_feats:
-		data['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in shuffle_indices]
+	# for feat_name in raw_non_lex_feats:
+	# 	data['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in shuffle_indices]
 	print("Shuffled data!")
 
 	# Split into train/dev/test
@@ -806,11 +811,11 @@ def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	# Non-lex input
 	split_data['train']['non_lex'] = {}
 	split_data['dev']['non_lex'] = {}
-	split_data['test']['non_lex'] = {}
-	for feat_name in raw_non_lex_feats:
-		split_data['train']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff)]
-		split_data['dev']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff, dev_cutoff)]
-		split_data['test']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(dev_cutoff, test_cutoff)]
+	# split_data['test']['non_lex'] = {}
+	# for feat_name in raw_non_lex_feats:
+	# 	split_data['train']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff)]
+	# 	split_data['dev']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff, dev_cutoff)]
+	# 	split_data['test']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(dev_cutoff, test_cutoff)]
 
 	print "split_data['train']['x'] shape:", np.shape(np.array(split_data['train']['x']))
 	print("Split data!")
@@ -836,17 +841,24 @@ def main(args):
 		raw_xb_file = 'aug_data/approach1/email_contents_grouped_2.npy'
 		raw_y_file = 'aug_data/approach1/labels_grouped.npy'
 		# pkl_file = 'aug_data/approach1/grouped.pkl' # max_email_words=50
-		pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
+		# pkl_file = 'aug_data/approach1/grouped_100.pkl' # max_email_words=100
+		pkl_file = 'aug_data/approach1/grouped_200.pkl' # max_email_words=200
 	elif not args.thread and args.approach == 2:
 		raw_xa_file = 'aug_data/approach2/email_contents_grouped_1_individual.npy'
 		raw_xb_file = 'aug_data/approach2/email_contents_grouped_2_individual.npy'
 		raw_y_file = 'aug_data/approach2/labels_grouped_approach_1.npy'
 		pkl_file = 'aug_data/approach2/grouped_100.pkl'
 	elif args.thread and args.approach == 2:
-		raw_xa_file = 'aug_data/approach2/thread_content_1_individual.npy'
-		raw_xb_file = 'aug_data/approach2/thread_content_2_individual.npy'
-		raw_y_file = 'aug_data/approach2/thread_labels_approach_1.npy'
-		pkl_file = 'aug_data/approach2/thread_labels_100.pkl'
+		if args.fullEmailsThread:
+			raw_xa_file = 'aug_data/approach2/thread_content_1_individual_extended.npy'
+			raw_xb_file = 'aug_data/approach2/thread_content_2_individual_extended.npy'
+			raw_y_file = 'aug_data/approach2/thread_labels_extended.npy'
+			pkl_file = 'aug_data/approach2/thread_labels_100_extended.pkl'
+		else:
+			raw_xa_file = 'aug_data/approach2/thread_content_1_individual.npy'
+			raw_xb_file = 'aug_data/approach2/thread_content_2_individual.npy'
+			raw_y_file = 'aug_data/approach2/thread_labels_approach_1.npy'
+			pkl_file = 'aug_data/approach2/thread_labels_100.pkl'
 
 	# Non-lexical feature file names
 	# (excluding "_1.npy" or "_2.npy" portion)
@@ -929,7 +941,7 @@ def main(args):
 						num_epochs=90,
 						strides=(1, 1),
 						activation='relu',
-						max_email_words=100,
+						max_email_words=200,
 						word_vec_dim=100,
 						dropout=0.2,
 						use_non_lex=args.useNonLex)
@@ -977,7 +989,7 @@ def main(args):
 					AugCNN2_full(data,
 						num_filters=32,
 						batch_size=30,
-						num_epochs=100,
+						num_epochs=30,
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=100,
@@ -994,6 +1006,7 @@ if __name__ == "__main__":
 	parser.add_argument('--tuneParams', type=bool, default=False, help="whether to tune hyperparams with hyperas (default=False)")
 	parser.add_argument('--thread', type=bool, default=False, help="whether to use thread data or grouped data")
 	parser.add_argument('--useNonLex', type=bool, default=False, help="whether to use non-lexical (structural) features (default=False)")
+	parser.add_argument('--fullEmailsThread', type=bool, default=False, help="whether to use full thread data or regular thread data")
 
 	args = parser.parse_args()
 	main(args)
