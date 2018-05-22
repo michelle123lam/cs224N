@@ -362,12 +362,12 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	# flatten = TimeDistributed(Flatten())(l_pool2)
 
 	#2d) Third Conv2D version (simplest)
-	kernel_size=3
-	l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
-	l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
-	# l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
-	# l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
-	flatten = TimeDistributed(Flatten())(l_pool1)
+	# kernel_size=3
+	# l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
+	# l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
+	# # l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
+	# # l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
+	# flatten = TimeDistributed(Flatten())(l_pool1)
 
 	# 3) Multiple filters version
 	# filter_sizes = [3,4,5]
@@ -404,7 +404,6 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 		flatten = TimeDistributed(Flatten())(concatenated_tensor)
 	else:
 		flatten = Flatten()(concatenated_tensor)
->>>>>>> 1a4bfe4aada11b6d2668e0131b4be8fd1bf76c60
 
 	return cur_input, flatten
 
@@ -1230,7 +1229,6 @@ def main(args):
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=150,
->>>>>>> 1a4bfe4aada11b6d2668e0131b4be8fd1bf76c60
 						word_vec_dim=100,
 						dropout=0.2,
 						use_non_lex=args.useNonLex)
@@ -1307,14 +1305,14 @@ def main(args):
 			else:
 				AugCNNLSTM3_full(data,
 						num_filters=32,
-						batch_size=20, # 30
+						batch_size=60, # 30
 						output_dim=100, # 100
-						num_epochs=70,
+						num_epochs= 35, #40, # 90
 						strides=(1, 1),
 						activation='relu',
-						max_email_words=100,
+						max_email_words=20,
 						word_vec_dim=100,
-						dropout=0.2,
+						dropout=0.05,
 						use_non_lex=args.useNonLex)
 
 
