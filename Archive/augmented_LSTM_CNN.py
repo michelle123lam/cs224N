@@ -61,25 +61,18 @@ K.set_session(sess)
 
 # Metrics wrapper
 class Metrics(Callback):
-	def on_train_begin(self, logs={}):
-		self.val_f1s = []
-		self.val_recalls = []
-		self.val_precisions = []
+    # def __init__(self, test_data):
+    #     self.test_data = test_data
 
 	def on_epoch_end(self, epoch, logs={}):
+		print "GOT HERE!"
 		val_predict = (np.asarray(self.model.predict([self.validation_data[0], self.validation_data[1]]))).round()
 		val_targ = self.validation_data[2]
 		_val_f1 = f1_score(val_targ, val_predict)
 		_val_recall = recall_score(val_targ, val_predict)
 		_val_precision = precision_score(val_targ, val_predict)
-		self.val_f1s.append(_val_f1)
-		self.val_recalls.append(_val_recall)
-		self.val_precisions.append(_val_precision)
-		print " - val_f1: %f - val_precision: %f - val_recall %f" %(_val_f1, _val_precision, _val_recall)
+		print " TEST - val_f1: %f - val_precision: %f - val_recall %f" %(_val_f1, _val_precision, _val_recall)
 		return
-
-metrics = Metrics()
-
 
 # AugLSTM: Approach 1 ---------------------------------
 def AugLSTM1_full_data():
@@ -90,7 +83,7 @@ def AugLSTM1_full_data():
 	dropout = 0.3 # Tuned!
 	batch_size=30
 	num_epochs=50
-	max_email_words=100
+	max_email_words=200
 	word_vec_dim=100
 	use_non_lex=True
 	return data, output_dim, dropout, batch_size, num_epochs, max_email_words, word_vec_dim, use_non_lex
@@ -162,12 +155,13 @@ def AugLSTM1_full(data, output_dim=100, dropout=0.2, batch_size=30, num_epochs=1
 
 
 	# Fit model
+	metrics = Metrics()
 	merged_model.fit(x_train, np.array(data['train']['y']),
 		batch_size=batch_size,
 		# epochs=num_epochs,
-		epochs={{choice([10, 20, 50])}},
-		validation_data=(x_dev, np.array(data['dev']['y'])),
-		# callbacks=[metrics]
+		epochs=10,
+		validation_data=(x_test, np.array(data['test']['y'])),
+		callbacks=[metrics],
 		)
 	print "Fitted merged_model!"
 
@@ -361,13 +355,13 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	# # l_pool3 = MaxPool2D(35, padding='valid')(l_cov3)  # global max pooling
 	# flatten = TimeDistributed(Flatten())(l_pool2)
 
-	#2d) Third Conv2D version (simplest)
-	kernel_size=3
-	l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
-	l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
-	# l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
-	# l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
-	flatten = TimeDistributed(Flatten())(l_pool1)
+	# #2d) Third Conv2D version (simplest)
+	# kernel_size=3
+	# l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
+	# l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
+	# # l_cov2 = Conv2D(32, kernel_size=(kernel_size, word_vec_dim), activation='relu', padding='valid')(l_pool1)
+	# # l_pool2 = MaxPool2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov2)
+	# flatten = TimeDistributed(Flatten())(l_pool1)
 
 	# 3) Multiple filters version
 	# filter_sizes = [3,4,5]
@@ -404,7 +398,6 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 		flatten = TimeDistributed(Flatten())(concatenated_tensor)
 	else:
 		flatten = Flatten()(concatenated_tensor)
->>>>>>> 1a4bfe4aada11b6d2668e0131b4be8fd1bf76c60
 
 	return cur_input, flatten
 
@@ -668,7 +661,7 @@ def AugCNNLSTM3_full_data():
 	num_epochs=10 # -
 	strides=(1, 1)
 	activation='relu'
-	max_email_words=100
+	max_email_words=30
 	word_vec_dim=100
 	dropout=0.5
 	use_non_lex=True
@@ -788,7 +781,6 @@ def AugCNNLSTM3_full(data, num_filters=32, batch_size=30, num_epochs=10, strides
 		# epochs={{choice([30, 40, 50, 60])}}, # Tuning
 		epochs=num_epochs,
 		validation_data=(x_dev, np.array(data['dev']['y'])),
-			#callbacks=[metrics]
 			)
 	print "Fitted merged_model!"
 
@@ -861,14 +853,14 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	raw_xa = np.load(raw_xa_file)
 	raw_xb = np.load(raw_xb_file)
 	raw_y = np.load(raw_y_file)
-	raw_non_lex_feats = {}
-	for file_prefix in non_lex_feats_files:
-		feat_name = file_prefix.split('/')[-1] # last part of filename
-		raw_non_lex_feats[feat_name] = [
-			np.load(file_prefix + '_1.npy'),
-			np.load(file_prefix + '_2.npy')
-		]
-		data['non_lex'][feat_name] = []
+	# raw_non_lex_feats = {}
+	# for file_prefix in non_lex_feats_files:
+	# 	feat_name = file_prefix.split('/')[-1] # last part of filename
+	# 	raw_non_lex_feats[feat_name] = [
+	# 		np.load(file_prefix + '_1.npy'),
+	# 		np.load(file_prefix + '_2.npy')
+	# 	]
+	# 	data['non_lex'][feat_name] = []
 
 	# Separate A's and B's emails for each pairing
 	n_pairs = len(raw_xa)
@@ -878,10 +870,10 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 		b_email = get_vectorized_email(raw_xb[pair_i], wordVectors, max_email_words=150)
 		data['x'].append([a_email, b_email])
 		data['y'].append([raw_y[pair_i]])
-		for feat_name in raw_non_lex_feats:
-			data['non_lex'][feat_name].append(
-				[raw_non_lex_feats[feat_name][0][pair_i],
-				raw_non_lex_feats[feat_name][1][pair_i]])
+		# for feat_name in raw_non_lex_feats:
+		# 	data['non_lex'][feat_name].append(
+		# 		[raw_non_lex_feats[feat_name][0][pair_i],
+		# 		raw_non_lex_feats[feat_name][1][pair_i]])
 	print("Read in data!")
 
 	# Shuffle data
@@ -889,8 +881,8 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	shuffle_indices = np.random.permutation(np.arange(n_pairs))
 	data['x'] = [data['x'][i] for i in shuffle_indices]
 	data['y'] = [data['y'][i] for i in shuffle_indices]
-	for feat_name in raw_non_lex_feats:
-		data['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in shuffle_indices]
+	# for feat_name in raw_non_lex_feats:
+	# 	data['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in shuffle_indices]
 	print("Shuffled data!")
 
 	# Split into train/dev/test
@@ -918,10 +910,10 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 	split_data['train']['non_lex'] = {}
 	split_data['dev']['non_lex'] = {}
 	split_data['test']['non_lex'] = {}
-	for feat_name in raw_non_lex_feats:
-		split_data['train']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff)]
-		split_data['dev']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff, dev_cutoff)]
-		split_data['test']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(dev_cutoff, test_cutoff)]
+	# for feat_name in raw_non_lex_feats:
+	# 	split_data['train']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff)]
+	# 	split_data['dev']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(train_cutoff, dev_cutoff)]
+	# 	split_data['test']['non_lex'][feat_name] = [data['non_lex'][feat_name][i] for i in range(dev_cutoff, test_cutoff)]
 
 	print("Split data!")	
 
@@ -935,7 +927,7 @@ def processData1(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_
 
 def processData2(raw_xa_file, raw_xb_file, raw_y_file, non_lex_feats_files, pkl_file):
 	max_num_emails = 5
-	max_email_words = 20
+	max_email_words = 30
 	word_vec_dim = 100
 
 	data = {}
@@ -1128,7 +1120,7 @@ def main(args):
 			raw_xa_file = 'aug_data/approach2/thread_content_1_individual_extended.npy'
 			raw_xb_file = 'aug_data/approach2/thread_content_2_individual_extended.npy'
 			raw_y_file = 'aug_data/approach2/thread_labels_extended.npy'
-			pkl_file = 'aug_data/approach2/thread_labels_20_extended.pkl'
+			pkl_file = 'aug_data/approach2/thread_labels_30_extended.pkl'
 		else:
 			raw_xa_file = 'aug_data/approach2/thread_content_1_individual.npy'
 			raw_xb_file = 'aug_data/approach2/thread_content_2_individual.npy'
@@ -1196,7 +1188,7 @@ def main(args):
 						dropout=0.3,
 						batch_size=30,
 						num_epochs=50, # 50
-						max_email_words=100,
+						max_email_words=200,
 						word_vec_dim=100,
 						use_non_lex=args.useNonLex)
 
@@ -1230,7 +1222,6 @@ def main(args):
 						strides=(1, 1),
 						activation='relu',
 						max_email_words=150,
->>>>>>> 1a4bfe4aada11b6d2668e0131b4be8fd1bf76c60
 						word_vec_dim=100,
 						dropout=0.2,
 						use_non_lex=args.useNonLex)
@@ -1307,14 +1298,14 @@ def main(args):
 			else:
 				AugCNNLSTM3_full(data,
 						num_filters=32,
-						batch_size=20, # 30
+						batch_size=60, # 30
 						output_dim=100, # 100
-						num_epochs=70,
+						num_epochs=32,
 						strides=(1, 1),
 						activation='relu',
-						max_email_words=100,
+						max_email_words=30,
 						word_vec_dim=100,
-						dropout=0.2,
+						dropout=0.1,
 						use_non_lex=args.useNonLex)
 
 
