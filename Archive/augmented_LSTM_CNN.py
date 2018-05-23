@@ -355,7 +355,9 @@ def get_CNN(num_filters=32, strides=(1,1), activation='relu', max_email_words=50
 	# # l_pool3 = MaxPool2D(35, padding='valid')(l_cov3)  # global max pooling
 	# flatten = TimeDistributed(Flatten())(l_pool2)
 
-	# #2d) Third Conv2D version (simplest)
+
+	#2d) Third Conv2D version (simplest)
+
 	# kernel_size=3
 	# l_cov1 = Conv2D(64, kernel_size=(kernel_size, word_vec_dim), strides=strides, activation=activation)(cur_input)
 	# l_pool1 = MaxPooling2D(pool_size=(word_vec_dim - kernel_size + 1, 1), strides=(2, 2), padding='valid')(l_cov1)
